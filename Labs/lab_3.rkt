@@ -195,11 +195,11 @@
 ;;takes as inout two lists of Number of the same length, and returns a new list of lists
 ;;where each element of the new list, is its self a list/tuple containing the btoh Numbers from
 ;;that index in the original lists
-(define (zip [list1 : (Listof Number)] [list2 : (Listof Number)]) : (Listof Any)
-  (cons (list (first list1) (first list2)) (zip (rest list1) (rest list2))))
+;; (define (zip [list1 : (Listof Number)] [list2 : (Listof Number)]) : (Listof Any)
+;;   (cons (list (first list1) (first list2)) (zip (rest list1) (rest list2))))
 
 ;;tests
-(check-equal? (zip (list 1 2 3) (list 1 2 3)) (list (list 1 1) (list 2 2) (list 3 3)))
+;;(check-equal? (zip (list 1 2 3) (list 1 2 3)) (list (list 1 1) (list 2 2) (list 3 3)))
 
 
 
@@ -210,6 +210,9 @@
 
 
 ;;zip function----------------------------------------------------------------------------
+;;takes as input two lists of Number of the same length, and returns a new list of lists
+;;where each element of the new list, is its self a list/tuple containing the both Numbers from
+;;that index in the original lists
 (define (pair [n : Number] [m : Number]) : (Listof Number)
   (list n m))
 
@@ -223,6 +226,7 @@
 (check-equal? (zip '() '()) '())
 (check-exn (regexp (regexp-quote "lists must be of the same length"))
            (lambda () (zip '(1) '(3 4))))
+
 
 
 
