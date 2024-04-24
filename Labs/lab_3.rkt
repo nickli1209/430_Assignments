@@ -53,18 +53,18 @@
 ;;ohno
 ;;given a value, returns the symbol 'okay if the value is a number. Otherwise, the function errors with an error message
 ;;containing the value
-(define (ohno value)
-  (if(number? value)
-     'okay
-     (error 'not-a-num "~e is not a number" value)))
+;; (define (ohno value)
+;;   (if(number? value)
+;;      'okay
+;;      (error 'not-a-num "~e is not a number" value)))
 
 ;;tests
-(check-equal? (ohno 5) 'okay)
-(check-exn
- #px"jenny"
- (lambda () (ohno "jenny")))
-(check-exn (regexp (regexp-quote "not a num"))
-           (lambda () (ohno "not a num")))
+;; (check-equal? (ohno 5) 'okay)
+;; (check-exn
+;;  #px"jenny"
+;;  (lambda () (ohno "jenny")))
+;; (check-exn (regexp (regexp-quote "not a num"))
+;;            (lambda () (ohno "not a num")))
 
 
 ;;ohno (nick)-----------------------------------------------------------------------------------
@@ -109,6 +109,25 @@
       [(numC n) n]
       [(plusC l r) (+ (interp l) (interp r))]
       [(multC  l r) (* (interp l) (interp r))]))
+
+;;zip function----------------------------------------------------------------------------
+(define (pair [n : Number] [m : Number]) : (Listof Number)
+  (list n m))
+
+(define (zip [list1 : (Listof Number)] [list2 : (Listof Number)]) : (Listof (Listof Number))
+  (if (= (length list1) (length list2))
+      (map pair list1 list2)  ; Use 'map' with 'list' to pair elements
+      (error "The lists must be of the same length")))  ; Error if lengths differ
+
+;;tests
+(check-equal? (zip '(1 3 5 7) '(2 4 6 8)) '((1 2) (3 4) (5 6) (7 8)))
+(check-equal? (zip '() '()) '())
+(check-exn (regexp (regexp-quote "lists must be of the same length"))
+           (lambda () (zip '(1) '(3 4))))
+
+
+
+
 
 
 
