@@ -87,9 +87,9 @@
 ;;Arith Language----------------------------------------------------------------------------
  ;;changed tstruct to struct not sure what a tstruct is...
   (define-type ArithC (U numC plusC multC))
-  (struct numC ([n : Real]))
-  (struct plusC ([l : ArithC] [r : ArithC]))
-  (struct multC ([l : ArithC] [r : ArithC]))
+  (struct numC ([n : Real])#:transparent)
+  (struct plusC ([l : ArithC] [r : ArithC])#:transparent)
+  (struct multC ([l : ArithC] [r : ArithC])#:transparent)
 
   #;(define (interp [a : ArithC]) : Real
       (match a
@@ -109,6 +109,105 @@
       [(numC n) n]
       [(plusC l r) (+ (interp l) (interp r))]
       [(multC  l r) (* (interp l) (interp r))]))
+
+
+;;Nick Last Night Below----------------------------------------------------------------------
+;;evalutation....not sure--------------------------------------------------------------------
+(define (evaluation [exp : ArithC]): Real
+  (interp exp))
+
+;;tests
+(check-= (evaluation (numC 10)) 10 0.01)
+(check-= (evaluation (plusC (numC 10) (numC 1))) 11 0.01)
+(check-= (evaluation (multC (numC 10) (numC 1))) 10 0.01)
+(check-= (evaluation (plusC (numC 1)(plusC (numC 10) (numC 1)))) 12 0.01)
+
+;;num-adds-----------------------------------------------------------------------------------
+;;the function num-adds accepts an ArithC, and returns the number of additions it contains
+(define (num-adds [exp : ArithC]) : Real
+  (printf "Entering num-adds with: ~e\n" exp)
+  (match exp
+    [(plusC l r)              (+ 1 (num-adds l) (num-adds r))]
+    [(multC l r)                (+ (num-adds l) (num-adds r))]
+    [else                                                   0]))
+
+;;tests
+(check-equal? (num-adds (numC 10)) 0)
+(check-equal? (num-adds (plusC (numC 10) (numC 1))) 1)
+(check-equal? (num-adds (plusC (numC 1)(plusC (numC 10) (numC 1)))) 2)
+(check-equal? (num-adds (multC (numC 1)(plusC (numC 10) (numC 1)))) 1)
+
+;;parser for arith----------------------------------------------------------------------------
+;;the function parse-arith takes as input a Sexp, and returns an ArithC, or error if not valid Arith
+(define (parse-arith [exp : Sexp]): ArithC
+  (match exp
+    [(? real? n)        (numC n)]
+    [(list '+ l r)     (plusC (parse-arith l) (parse-arith r))]
+    [(list '* l r)     (multC (parse-arith l) (parse-arith r))]
+    [else     (error 'parse-arith "Invalid Arith Syntax")]))
+
+;;tests
+;;why did these tests fail without adding transparent field to the struct defs for pluC etc
+;;but none of the test cases above failed...
+(check-equal? (parse-arith '(+ 2 3)) (plusC (numC 2) (numC 3)))
+(check-equal? (parse-arith '3) (numC 3))
+(check-equal? (parse-arith '(+ (* 2 3) 3)) (plusC (multC (numC 2) (numC 3)) (numC 3)))
+(check-exn
+ #px"Invalid Arith Syntax"
+ (λ()(parse-arith '(+ 1))))
+
+
+;;extended parser for arith (support ^2)-----------------------------------------------------------
+;;the function parse-arith takes as input a Sexp, and returns an ArithC, or error if not valid Arith
+(define (parse-arith2 [exp : Sexp]): ArithC
+  (match exp
+    [(? real? n)        (numC n)]
+    [(list '+ l r)     (plusC (parse-arith2 l) (parse-arith2 r))]
+    [(list '* l r)     (multC (parse-arith2 l) (parse-arith2 r))]
+    [(list '^2 n)       (multC (parse-arith2 n) (parse-arith2 n))]
+    [else     (error 'parse-arith2 "Invalid Arith Syntax")]))
+
+;;tests
+;;why did these tests fail without adding transparent field to the struct defs for pluC etc
+;;but not of the test cases above failed...
+(check-equal? (parse-arith2 '(+ 2 3)) (plusC (numC 2) (numC 3)))
+(check-equal? (parse-arith2 '3) (numC 3))
+(check-equal? (parse-arith2 '(+ (* 2 3) 3)) (plusC (multC (numC 2) (numC 3)) (numC 3)))
+(check-exn
+ #px"Invalid Arith Syntax"
+ (λ()(parse-arith2 '(+ 1))))
+(check-equal? (parse-arith2 '(^2 3)) (multC (numC 3) (numC 3)))
+
+;;top-interp------------------------------------------------------------------------------------
+;;the function top-interp accepts an Sexp in Arith, and returns it evaluated,
+;;using parse-arith2 and interp
+(define (top-interp [exp : Sexp]): Real
+  (interp (parse-arith2 exp)))
+
+;;tests
+(check-equal? (top-interp '(+ 2 3)) 5)
+(check-equal? (top-interp '(* 2 3)) 6)
+(check-equal? (top-interp '(^2 2)) 4)
+(check-equal? (top-interp '(+ (* 2 3) (^2 3))) 15)
+
+
+;;zip not done got tired...-------------------------------------------------------------------------------------------
+;;takes as inout two lists of Number of the same length, and returns a new list of lists
+;;where each element of the new list, is its self a list/tuple containing the btoh Numbers from
+;;that index in the original lists
+(define (zip [list1 : (Listof Number)] [list2 : (Listof Number)]) : (Listof Any)
+  (cons (list (first list1) (first list2)) (zip (rest list1) (rest list2))))
+
+;;tests
+(check-equal? (zip (list 1 2 3) (list 1 2 3)) (list (list 1 1) (list 2 2) (list 3 3)))
+
+
+
+
+
+
+
+
 
 ;;zip function----------------------------------------------------------------------------
 (define (pair [n : Number] [m : Number]) : (Listof Number)
