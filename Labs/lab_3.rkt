@@ -67,6 +67,49 @@
            (lambda () (ohno "not a num")))
 
 
+;;ohno (nick)-----------------------------------------------------------------------------------
+;;the function ohno accepts a value, and returns the symbol 'okay if the value was a number
+;;else an error message is displayed
+(define (ohno [val : Any ]) : Symbol
+  (if (number? val)
+      'okay
+      (error 'string-insert "Expected a number, got ~e" val)))
+;;tests
+(check-equal? (ohno 11) 'okay)
+(check-equal? (ohno -4424.24) 'okay)
+(check-exn
+ #px"Expected a number, got 'hello"
+ (λ()(ohno 'hello)))
+(check-exn
+ #px"Expected a number, got #t"
+ (λ()(ohno #t)))
+
+;;Arith Language----------------------------------------------------------------------------
+ ;;changed tstruct to struct not sure what a tstruct is...
+  (define-type ArithC (U numC plusC multC))
+  (struct numC ([n : Real]))
+  (struct plusC ([l : ArithC] [r : ArithC]))
+  (struct multC ([l : ArithC] [r : ArithC]))
+
+  #;(define (interp [a : ArithC]) : Real
+      (match a
+        [(numC n) n]
+        [(plusC l r) ...]
+        [(multC  l r) ...]))
+
+  ;; in Typed Racket, this produces type errors...:
+  #;(define (interp [a : ArithC]) : Real
+      (match a
+        [(numC n) n]
+        [(plusC l r) (+ l r)]
+        [(multC  l r) (+ l r)]))
+
+  (define (interp [a : ArithC]) : Real
+    (match a
+      [(numC n) n]
+      [(plusC l r) (+ (interp l) (interp r))]
+      [(multC  l r) (* (interp l) (interp r))]))
+
 
 
 
