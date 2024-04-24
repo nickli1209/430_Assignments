@@ -19,7 +19,7 @@
 
 (define (parse-expr [sexp : Sexp]) : ExprC
   (match sexp
-    [()]))
+    [(? real? sexp) (NumC sexp)]))
 
 (define (parse-fundef [sexp : Sexp]) : FundefC)
 

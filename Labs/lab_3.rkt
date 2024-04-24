@@ -47,8 +47,30 @@
 
 ;;tests
 (check-equal? (parse002 (list 10 (list 1 2 3) 'pp)) (list 1 2 3))
-(check-equal? (parse001 '(10 'chris 10)) #f)
-(check-equal? (parse001 (list 10 'chris 10)) #f) ;;ask why this fails...
-(check-equal? (parse001 '()) #f)
+(check-equal? (parse002 (list 10 11 'pp)) #f)
+(check-equal? (parse002 "string") #f)
 
-;;pa
+;;ohno
+;;given a value, returns the symbol 'okay if the value is a number. Otherwise, the function errors with an error message
+;;containing the value
+(define (ohno value)
+  (if(number? value)
+     'okay
+     (error 'not-a-num "~e is not a number" value)))
+
+;;tests
+(check-equal? (ohno 5) 'okay)
+(check-exn
+ #px"jenny"
+ (lambda () (ohno "jenny")))
+(check-exn (regexp (regexp-quote "not a num"))
+           (lambda () (ohno "not a num")))
+
+
+
+
+
+
+
+
+
