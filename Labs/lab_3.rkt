@@ -9,7 +9,7 @@
 
 (define (parse000 [sex : Sexp]) : Boolean
   (match sex
-    [(list n 'chris s)        (and (number? n) (symbol? s))]
+    [(list (? number?) 'chris (? symbol?)) #t]
     [other                          #f]))
 
 ;;tests
@@ -25,7 +25,7 @@
 
 (define (parse001 [sex : Sexp]) : (U Symbol Boolean)
   (match sex
-    [(list n 'chris s)        (if (and (number? n) (symbol? s)) s #f)]
+    [(list (? number?) 'chris (? symbol? s)) s]
     [other                          #f]))
 
 ;;tests
@@ -42,29 +42,13 @@
   (match sex
     ;;list? check if of type list, andmap? on the list l, with procedure r=Real?
     ;;checks if each element of l is a Real
-    [(list n l s)        (if (and (list? l) (andmap real? l)) l #f)] ;;ask how l becomes list of real instead of list of sexp
+    [(list _ (list (? real? lst) ...) _) (cast lst (Listof Real))] ;;ask how l becomes list of real instead of list of sexp
     [other                          #f]))
 
 ;;tests
 (check-equal? (parse002 (list 10 (list 1 2 3) 'pp)) (list 1 2 3))
 (check-equal? (parse002 (list 10 11 'pp)) #f)
 (check-equal? (parse002 "string") #f)
-
-;;ohno
-;;given a value, returns the symbol 'okay if the value is a number. Otherwise, the function errors with an error message
-;;containing the value
-;; (define (ohno value)
-;;   (if(number? value)
-;;      'okay
-;;      (error 'not-a-num "~e is not a number" value)))
-
-;;tests
-;; (check-equal? (ohno 5) 'okay)
-;; (check-exn
-;;  #px"jenny"
-;;  (lambda () (ohno "jenny")))
-;; (check-exn (regexp (regexp-quote "not a num"))
-;;            (lambda () (ohno "not a num")))
 
 
 ;;ohno (nick)-----------------------------------------------------------------------------------
@@ -85,30 +69,17 @@
  (λ()(ohno #t)))
 
 ;;Arith Language----------------------------------------------------------------------------
- ;;changed tstruct to struct not sure what a tstruct is...
-  (define-type ArithC (U numC plusC multC))
-  (struct numC ([n : Real])#:transparent)
-  (struct plusC ([l : ArithC] [r : ArithC])#:transparent)
-  (struct multC ([l : ArithC] [r : ArithC])#:transparent)
+;;changed tstruct to struct not sure what a tstruct is...
+(define-type ArithC (U numC plusC multC))
+(struct numC ([n : Real])#:transparent)
+(struct plusC ([l : ArithC] [r : ArithC])#:transparent)
+(struct multC ([l : ArithC] [r : ArithC])#:transparent)
 
-  #;(define (interp [a : ArithC]) : Real
-      (match a
-        [(numC n) n]
-        [(plusC l r) ...]
-        [(multC  l r) ...]))
-
-  ;; in Typed Racket, this produces type errors...:
-  #;(define (interp [a : ArithC]) : Real
-      (match a
-        [(numC n) n]
-        [(plusC l r) (+ l r)]
-        [(multC  l r) (+ l r)]))
-
-  (define (interp [a : ArithC]) : Real
-    (match a
-      [(numC n) n]
-      [(plusC l r) (+ (interp l) (interp r))]
-      [(multC  l r) (* (interp l) (interp r))]))
+(define (interp [a : ArithC]) : Real
+  (match a
+    [(numC n) n]
+    [(plusC l r) (+ (interp l) (interp r))]
+    [(multC  l r) (* (interp l) (interp r))]))
 
 
 ;;Nick Last Night Below----------------------------------------------------------------------
@@ -191,22 +162,6 @@
 (check-equal? (top-interp '(+ (* 2 3) (^2 3))) 15)
 
 
-;;zip not done got tired...-------------------------------------------------------------------------------------------
-;;takes as inout two lists of Number of the same length, and returns a new list of lists
-;;where each element of the new list, is its self a list/tuple containing the btoh Numbers from
-;;that index in the original lists
-;; (define (zip [list1 : (Listof Number)] [list2 : (Listof Number)]) : (Listof Any)
-;;   (cons (list (first list1) (first list2)) (zip (rest list1) (rest list2))))
-
-;;tests
-;;(check-equal? (zip (list 1 2 3) (list 1 2 3)) (list (list 1 1) (list 2 2) (list 3 3)))
-
-
-
-
-
-
-
 
 
 ;;zip function----------------------------------------------------------------------------
@@ -228,8 +183,7 @@
            (lambda () (zip '(1) '(3 4))))
 
 
-
-
+4RUHCT
 
 
 
