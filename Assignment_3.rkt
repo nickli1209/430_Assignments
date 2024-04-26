@@ -4,14 +4,14 @@
 ;;not fully implemented
 
 ;;STRUCTS AND TYPES
-(define-type ExprC (U numC Variable binopC FunappC))
+(define-type ExprC (U numC var binopC FunappC))
 (struct binopC ([op : Symbol] [left : ExprC] [right : ExprC])#:transparent)
-(struct Variable ([name : Symbol])#:transparent)
+(struct var ([name : Symbol])#:transparent)
 (define-type ArithC (U numC plusC multC))
 (struct numC ([n : Real])#:transparent)
 (struct plusC ([l : ArithC] [r : ArithC])#:transparent)
 (struct multC ([l : ArithC] [r : ArithC])#:transparent)
-(struct FundefC([name : Symbol] [params : (Listof Symbol)] [body : ExrpC]))
+(struct FundefC([name : Symbol] [params : (Listof Symbol)] [body : ExprC]))
 (struct FunappC ([name : Symbol] [args : (Listof ExprC)]))
 
 
@@ -34,6 +34,8 @@
 (define (parse [exp : Sexp]): ExprC
   (match exp
     [(? real? n)        (numC n)]
+    ;;maybe take out how to handle vars?
+    [(? symbol? s)              (var s)]
     [(list (? symbol? op) l r)     (if (hash-has-key? op-table op)
                                        (binopC op (parse l) (parse r))
                                        (error 'interp "ZODE: Unknown Operator Error"))] ;;the predicate syntax verifies symbol
@@ -74,18 +76,39 @@
 
 ;;test top interp
 (check-equal? (top-interp (+ 5 6)) 11)
+(check-equal? (top-interp (/ 5 5)) 1)
 
-;;3.2 functions with 0 or more args------------------------------------------
+
+
+;;3.2 functions with 0 or more args-----------------------------------------------
 ;;types and definitions changed above in TYPES section
 
-;;parser for functions
+;;parser for functions, function definitions are in the form
+;;{def : <name> : <params> : <body>}
 (define (parse-fundef [s : Sexp]) : FundefC
   (match s
-    [(list 'def ... ': ... ': ])) ;;ask about handling curly braces/parens
+    ;;currently only handling one param, types werent working with multiple
+    [(list 'def ': (? symbol? name) ': (? symbol? params) ': (? list? body))
+     (FundefC name (list params) (parse body))]
+    ;;if invalid function def
+    [else (error 'parse-fundef "ZODE: Invalid Function Definition")]))
+
+;;previous if case for list of params, save for later
+#;(if (andmap symbol? params) (FundefC name params (parse body))
+         (error 'parse-fundef "ZODE: Invalid Param"))
+
+;;test parse-fundef...
+(check-equal? (parse-fundef '{def : sum : x : {+ x x}}) (FundefC 'sum (list 'x) (binopC '+ (var 'x) (var 'x))))
+(check-exn
+ #px"ZODE: Invalid Function Definition"
+ (λ()(parse-fundef '{def : sum : x : {+ x x}})))
 
 
-;;new interp
-(define (interp [ast : ExprC] [funs : (Listof FundefC )]) : Real
+;;interp-fns to do interp function defs
+
+
+;;new interp (expressions.. workmin progress, need to support function apps
+#;(define (interp [ast : ExprC] [funs : (Listof FundefC )]) : Real
     (match ast
       [(numC n) n]
       [(binopC op l r) (if (hash-has-key? op-table op);;check if in op is valid
@@ -100,9 +123,15 @@
 
 
 
+
 ;; work with later------------------------------------------------------------
 
 ;;parser for programs
 #;(define (parse-prog [sexp : Sexp]) : (Listof FundefC))
+
+
+;;top-interp (interp programs call parse prog)
+#;(define (top-interp2 [fun-sexps : Sexp]): Real
+  (interp-fns (parse-prog fun-sexps)))
 
 
