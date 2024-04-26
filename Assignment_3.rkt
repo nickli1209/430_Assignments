@@ -135,3 +135,6 @@
   (interp-fns (parse-prog fun-sexps)))
 
 
+
+;;TEST CASES-------------------------------------------------------------------
+;;put all test cases at the botoom after wards, (stylistic choice)
