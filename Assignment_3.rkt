@@ -4,15 +4,13 @@
 ;;not fully implemented
 
 ;;STRUCTS AND TYPES
-(define-type ExprC (U numC var binopC FunappC))
+(define-type ExprC (U numC idC binopC FunappC ifleq0?))
 (struct binopC ([op : Symbol] [left : ExprC] [right : ExprC])#:transparent)
-(struct var ([name : Symbol])#:transparent)
-(define-type ArithC (U numC plusC multC))
+(struct idC ([name : Symbol])#:transparent)
 (struct numC ([n : Real])#:transparent)
-(struct plusC ([l : ArithC] [r : ArithC])#:transparent)
-(struct multC ([l : ArithC] [r : ArithC])#:transparent)
-(struct FundefC([name : Symbol] [params : (Listof Symbol)] [body : ExprC]))
-(struct FunappC ([name : Symbol] [args : (Listof ExprC)]))
+(struct FundefC([name : Symbol] [params : (Listof Symbol)] [body : ExprC])#:transparent)
+(struct FunappC ([name : Symbol] [args : (Listof ExprC)])#:transparent)
+(struct ifleq0? ([check : ExprC] [then : ExprC] [else : ExprC])#:transparent)
 
 
 ;;ExprC Concrete Syntax
@@ -30,18 +28,41 @@
                   '* *
                   '/ /) )
 
+(define (valid-id? [id : Symbol]) : Boolean
+  (if (or (equal? id '+)
+          (equal? id '*)
+          (equal? id '-)
+          (equal? id '/)
+          (equal? id 'ifleq0?)
+          (equal? id 'def)
+          (equal? id ':)) #f #t))
+
 ;;parser for expressions from arith, step 1, change to instead parse + and * into
 (define (parse [exp : Sexp]): ExprC
   (match exp
     [(? real? n)        (numC n)]
-    ;;maybe take out how to handle vars?
-    [(? symbol? s)              (var s)]
+    [(? symbol? id)      (if (valid-id? id) (idC id) (error 'invalid-name "ZODE: ~e symbol not allowed" id))]
+
+    [(list (? symbol? fname) (? real? args) ...)       (cond
+                                                         [(valid-id? fname) (FunappC fname (cast args (Listof ExprC)))])]
+    
     [(list (? symbol? op) l r)     (if (hash-has-key? op-table op)
                                        (binopC op (parse l) (parse r))
                                        (error 'interp "ZODE: Unknown Operator Error"))] ;;the predicate syntax verifies symbol
+
+    
+    [(list 'ifleq0? ': check ': then ': else)     (ifleq0? (parse check) (parse then) (parse else))]
+    ;;would have to change to accept non real exprc
     [else     (error 'parse "ZODE: Invalid Syntax")]))
 
+#;(cond
+                                     [(hash-has-key? op-table op) (binopC op (parse l) (parse r))])
+#;(if (hash-has-key? op-table op)
+                                       (binopC op (parse l) (parse r))
+                                       (error 'interp "ZODE: Unknown Operator Error"))
+
 ;;test parse
+(check-equal? (parse '{f 1 2}) (FunappC 'f (list (numC 1) (numC 2))))
 (check-equal? (parse 10) (numC 10))
 (check-equal? (parse '(+ 10 10)) (binopC '+ (numC 10)(numC 10)))
 (check-exn
@@ -50,6 +71,15 @@
 (check-exn
  #px"ZODE: Invalid Syntax"
  (λ()(parse '(+ 2))))
+(check-equal? (parse '{ifleq0? : -5 : 1 : 0}) (ifleq0? (numC -5) (numC 1) (numC 0)))
+(check-equal? (parse '{ifleq0? : 5 : (+ 5 -4) : 0}) (ifleq0? (numC 5) (binopC '+ (numC 5) (numC -4)) (numC 0)))
+(check-equal? (parse 'a) (idC 'a))
+(check-exn
+ #px"symbol not allowed"
+ (λ () (parse '+)))
+(check-exn
+ #px"symbol not allowed"
+ (λ () (parse '(+ 7 *))))
 
 
 ;;interpreter from arith, adjusted to interp binop
@@ -88,8 +118,8 @@
 (define (parse-fundef [s : Sexp]) : FundefC
   (match s
     ;;currently only handling one param, types werent working with multiple
-    [(list 'def ': (? symbol? name) ': (? symbol? params) ': (? list? body))
-     (FundefC name (list params) (parse body))]
+    [(list 'def ': (? symbol? name) ': (? symbol? params) ... ': body)
+     (FundefC name (cast params (Listof Symbol)) (parse body))]
     ;;if invalid function def
     [else (error 'parse-fundef "ZODE: Invalid Function Definition")]))
 
@@ -98,10 +128,10 @@
          (error 'parse-fundef "ZODE: Invalid Param"))
 
 ;;test parse-fundef...
-(check-equal? (parse-fundef '{def : sum : x : {+ x x}}) (FundefC 'sum (list 'x) (binopC '+ (var 'x) (var 'x))))
+(check-equal? (parse-fundef '{def : sum : x y : {+ 5 6}}) (FundefC 'sum '(x y) (binopC '+ (numC 5) (numC 6))))
 (check-exn
  #px"ZODE: Invalid Function Definition"
- (λ()(parse-fundef '{def : sum : x : {+ x x}})))
+ (λ()(parse-fundef '{def : sum  x : {+ x x}})))
 
 
 ;;interp-fns to do interp function defs
@@ -127,7 +157,24 @@
 ;; work with later------------------------------------------------------------
 
 ;;parser for programs
-#;(define (parse-prog [sexp : Sexp]) : (Listof FundefC))
+(define (parse-prog [sexp : Sexp]) : (Listof FundefC)
+  (match sexp
+    ['()                '()]
+    [(cons fst rst)      (cons (parse-fundef fst) (parse-prog rst))]
+    [else                (error 'invalid-prog "ZODE: Invalid Program Definition Detected")]))
+
+;;tests
+(check-exn
+ #px"ZODE: Invalid Function Definition"
+ (λ () (parse-prog '{+ 5 4})))
+(check-exn
+ #px"ZODE: Invalid Program Definition"
+ (λ () (parse-prog 'hi)))
+(check-equal? (parse-prog '()) '())
+(check-equal? (parse-prog '{{def : f : x y : {+ x y}}
+                            {def : main : : {- 1 2}}})
+              (list (FundefC 'f (list 'x 'y) (binopC '+ (idC 'x) (idC 'y)))
+                    (FundefC 'main '() (binopC '- (numC 1) (numC 2)))))
 
 
 ;;top-interp (interp programs call parse prog)
