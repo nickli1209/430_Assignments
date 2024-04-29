@@ -1,7 +1,14 @@
 #lang typed/racket
 (require typed/rackunit)
 ;;assingnment 3
-;;not fully implemented
+;;PROGRESS REPORT
+;;implemented parse, perse-fundef, and parse-prog
+;;original interp from 3.1 is done
+;;didnt get to fully implemnting interp, did up to the match for
+;;FunappC, wrote the first helper called get-fundefC that returns a
+;;FundefC from a function name (symbol) did get to handling subsitution
+;;
+
 
 ;;STRUCTS AND TYPES
 (define-type ExprC (U numC idC binopC FunappC ifleq0?))
@@ -13,21 +20,15 @@
 (struct ifleq0? ([check : ExprC] [then : ExprC] [else : ExprC])#:transparent)
 
 
-;;ExprC Concrete Syntax
-;;<expr> ::=  <numC> 
-;;            {<binopC> <expr> <expr>
-;;            {ifleq0? : <expr> : <expr> : <expr>} if less or equal to 0,
-;;            <id>
-
-;;3.1------------------------------------------------------------------------
-;;worry about later at intepr time, but use map or function to grab proper operation from
-;;symbol in Binop....
+;;HELPERS-------------------------------------------------------------------
+;;hash map to map the symbol of an operator to the actual operation
  (define op-table(hash
                   '+ +
                   '- -
                   '* *
                   '/ /) )
-
+;; Check if a given symbol is a valid id variable
+;;returns true if not one of the symbols below, false if it is
 (define (valid-id? [id : Symbol]) : Boolean
   (if (or (equal? id '+)
           (equal? id '*)
@@ -37,51 +38,84 @@
           (equal? id 'def)
           (equal? id ':)) #f #t))
 
+;;collection of valif operators for binop
+(define valid-ops '(+ - * /))
+
+
+;; get FundefC takes as input a symbol for a function name and a list of fundefs, and returns,
+;;returns a FundefC with the name matching the inputted function name, or error should need this for
+;;interp of FunappC...
+(define (get-fundefC [name : Symbol] [funs : (Listof FundefC)]) : FundefC
+  (cond
+  [(empty? funs) (error 'getfundefC"ZODE: Function Name Not Found")]
+  [else (cond
+     [(equal? name (FundefC-name (first funs))) (first funs)]
+     [else (get-fundefC name (rest funs))])]))
+
+;;function to handle substitution
+
+
+;;TEST get-fundefC
+(check-exn
+ #px"ZODE: Function Name Not Found"
+ (λ () (get-fundefC 'main '())))
+(check-equal? (get-fundefC 'main (list (FundefC 'main '() (binopC '+ (numC 5) (numC 5)))))
+              (FundefC 'main '() (binopC '+ (numC 5) (numC 5))) )
+(check-equal? (get-fundefC 'main (list (FundefC 'f '(x y) (binopC '+ (idC 'x) (idC 'y)))
+                                       (FundefC 'main '() (binopC '+ (numC 5) (numC 5)))))
+              (FundefC 'main '() (binopC '+ (numC 5) (numC 5))) )
+
+
+
+;;3.1------------------------------------------------------------------------
+
+;;PARSE
 ;;parser for expressions from arith, step 1, change to instead parse + and * into
 (define (parse [exp : Sexp]): ExprC
   (match exp
     [(? real? n)        (numC n)]
     [(? symbol? id)      (if (valid-id? id) (idC id) (error 'invalid-name "ZODE: ~e symbol not allowed" id))]
-
-    [(list (? symbol? fname) (? real? args) ...)       (cond
-                                                         [(valid-id? fname) (FunappC fname (cast args (Listof ExprC)))])]
-    
-    [(list (? symbol? op) l r)     (if (hash-has-key? op-table op)
-                                       (binopC op (parse l) (parse r))
-                                       (error 'interp "ZODE: Unknown Operator Error"))] ;;the predicate syntax verifies symbol
-
-    
+    ;;only can hit binopC if op is valid
+    [(list (?  (λ (op) (member op valid-ops)) op) l r) (binopC op (parse l) (parse r))]
     [(list 'ifleq0? ': check ': then ': else)     (ifleq0? (parse check) (parse then) (parse else))]
-    ;;would have to change to accept non real exprc
+    ;;would have to change to accept non real exprC as arg
+    [(list (? symbol? fname) args ...) (cond
+                                         [(member fname valid-ops) (error 'parse "ZODE: Invalid Syntax")]
+                                         [(valid-id? fname) (FunappC fname (map parse args))]
+                                         [else (error 'parse "ZODE: Invalid Function Name")])]
     [else     (error 'parse "ZODE: Invalid Syntax")]))
 
-#;(cond
-                                     [(hash-has-key? op-table op) (binopC op (parse l) (parse r))])
-#;(if (hash-has-key? op-table op)
-                                       (binopC op (parse l) (parse r))
-                                       (error 'interp "ZODE: Unknown Operator Error"))
 
-;;test parse
+
+
+;;PARSE TESTS
 (check-equal? (parse '{f 1 2}) (FunappC 'f (list (numC 1) (numC 2))))
 (check-equal? (parse 10) (numC 10))
 (check-equal? (parse '(+ 10 10)) (binopC '+ (numC 10)(numC 10)))
-(check-exn
- #px"ZODE: Unknown Operator Error"
- (λ()(parse '(ld 1 2))))
+;;shouod be numC 1 2 but was a real when list constructed
+(check-equal? (parse '(sum 1 2)) (FunappC 'sum (list (numC 1) (numC 2))))
 (check-exn
  #px"ZODE: Invalid Syntax"
  (λ()(parse '(+ 2))))
+(check-exn
+ #px"ZODE: Invalid Function Name"
+ (λ()(parse '(: 2))))
+(check-exn
+ #px"ZODE: Invalid Syntax"
+ (λ()(parse '(2 + 6))))
 (check-equal? (parse '{ifleq0? : -5 : 1 : 0}) (ifleq0? (numC -5) (numC 1) (numC 0)))
 (check-equal? (parse '{ifleq0? : 5 : (+ 5 -4) : 0}) (ifleq0? (numC 5) (binopC '+ (numC 5) (numC -4)) (numC 0)))
 (check-equal? (parse 'a) (idC 'a))
 (check-exn
- #px"symbol not allowed"
- (λ () (parse '+)))
-(check-exn
- #px"symbol not allowed"
- (λ () (parse '(+ 7 *))))
+  #px"symbol not allowed"
+  (λ () (parse '+)))
+ (check-exn
+  #px"symbol not allowed"
+  (λ () (parse '(+ 7 *))))
 
 
+
+;;ORIGINAL INTERP
 ;;interpreter from arith, adjusted to interp binop
 ;;interp handling error for symbols, shoudl parse instead?
 (define (interpOld [ast : ExprC]) : Real
@@ -99,14 +133,16 @@
  (λ()(interpOld (binopC 'hd (numC 2)(numC 3)))))
 
 
+
+;;Original Top Interp
 ;;Top-Interp combines parse and interp
-(define (top-interp [exp : Sexp]): Real
+(define (top-interpOld [exp : Sexp]): Real
   (interpOld (parse exp)))
 
 
-;;test top interp
-(check-equal? (top-interp (+ 5 6)) 11)
-(check-equal? (top-interp (/ 5 5)) 1)
+;;test top interpOld
+(check-equal? (top-interpOld (+ 5 6)) 11)
+(check-equal? (top-interpOld (/ 5 5)) 1)
 
 
 
@@ -123,9 +159,6 @@
     ;;if invalid function def
     [else (error 'parse-fundef "ZODE: Invalid Function Definition")]))
 
-;;previous if case for list of params, save for later
-#;(if (andmap symbol? params) (FundefC name params (parse body))
-         (error 'parse-fundef "ZODE: Invalid Param"))
 
 ;;test parse-fundef...
 (check-equal? (parse-fundef '{def : sum : x y : {+ 5 6}}) (FundefC 'sum '(x y) (binopC '+ (numC 5) (numC 6))))
@@ -134,29 +167,36 @@
  (λ()(parse-fundef '{def : sum  x : {+ x x}})))
 
 
-;;interp-fns to do interp function defs
 
 
-;;new interp (expressions.. workmin progress, need to support function apps
-#;(define (interp [ast : ExprC] [funs : (Listof FundefC )]) : Real
-    (match ast
+;;interp, havent handled FunappC's yet, confused and out of time
+(define (interp [exp : ExprC] [funs : (Listof FundefC )]) : Real
+    (match exp
       [(numC n) n]
+      ;;change to cond to support diide by zero error...
       [(binopC op l r) (if (hash-has-key? op-table op);;check if in op is valid
-                           ((hash-ref op-table op) (interp l) (interp r))
+                           ((hash-ref op-table op) (interp l funs) (interp r funs))
                            (error 'interp "ZODE: Unknown Operator Error"))]
-      [function match   ...     ...]))
+      [(ifleq0? ch t e) (if (<= (interp ch funs) 0) (interp t funs) (interp e funs))]
+      [(idC sym)            (error 'interp "ZODE: Interp Tried to Evaluate A Variable")]
+      ;;[(FunappC )... todo]
+      ))
 
 
+;;Interp Tests
+(check-equal? (interp (ifleq0? (numC -5) (numC 1) (numC 0)) '()) 1)
+(check-equal? (interp (ifleq0? (numC 5) (numC 1) (numC 0)) '()) 0)
+
+(check-equal? (interp (binopC '+ (numC 2) (numC 3)) '()) 5)
+(check-exn
+ #px"ZODE: Unknown Operator Error"
+ (λ()(interp (binopC 'y (numC 2) (numC 3)) '())))
+(check-exn
+ #px"ZODE: Interp Tried to Evaluate A Variable"
+ (λ()(interp (idC 'pp) '())))
 
 
-
-
-
-
-
-;; work with later------------------------------------------------------------
-
-;;parser for programs
+;;parser for programs--------------------------------------------------
 (define (parse-prog [sexp : Sexp]) : (Listof FundefC)
   (match sexp
     ['()                '()]
@@ -177,10 +217,15 @@
                     (FundefC 'main '() (binopC '- (numC 1) (numC 2)))))
 
 
-;;top-interp (interp programs call parse prog)
-#;(define (top-interp2 [fun-sexps : Sexp]): Real
-  (interp-fns (parse-prog fun-sexps)))
+;;top-interp (interp programs call parse prog)----------------------------------
+;;cant test yet
+(define (top-interp [fun-sexps : Sexp]): Real
+  ;;(interp-fns (parse-prog fun-sexps))
+  1)
 
+
+;;tests
+(check-equal?(top-interp '(test)) 1)
 
 
 ;;TEST CASES-------------------------------------------------------------------
