@@ -47,3 +47,46 @@
 (define (curry2 f)
   (λ (x) (λ (y) (f x y))))
 
+(((curry2 +) 5) 6)
+
+;;5 curry3---------------------------------------------------------------------------
+;; Develop the curry3 function; it takes a function of three arguments, and produces a function
+;; that takes one argument and produces a function that takes one argument and produces a function
+;; that takes one argument and produces the result of calling the input function on the three
+;; given arguments.In other words, it has the type
+;; 
+;; (All (a b c d) ((a b c -> d) -> (a -> (b -> (c -> d)))))
+;; 
+;; ... for types a,b,c, and d. You will need lambda for this.
+
+(define (curry3 f)
+  (λ (x) (λ (y) (λ (z) (f x y z)))))
+
+((((curry3 +) 5) 10) 15)
+
+;; 6 contains?
+;; Develop the contains? function, that consumes a list and a symbol and returns true exactly
+;; when the symbol occurs in the list.
+(define (contains? l s)
+  (cond
+    [(empty? l)                 #f]
+    [(equal? (first l) s)       #t]
+    [else                       (contains? (rest l) s)]))
+
+(contains? (list 'a 'b 'c) 'c)
+(contains? (list 'd 'e 'f) 'a)
+
+;; Use curry2 and contains? to develop in-list-many?, that consumes a source list of symbols and
+;; a list of query symbols, and returns a list of booleans indicating for the corresponding element
+;; of the query list whether it occurs in the source list. Use the built-in function map. This
+;; function should be a one-liner.
+
+;; (define (in-list-many? sl ql)
+;;   )
+
+
+
+
+
+
+
