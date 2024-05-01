@@ -81,8 +81,14 @@
 ;; of the query list whether it occurs in the source list. Use the built-in function map. This
 ;; function should be a one-liner.
 
-;; (define (in-list-many? sl ql)
-;;   )
+(define (in-list-many? sl ql)
+  (map ((curry2 contains?) sl) ql))
+
+(in-list-many? '(a b c d) '(c e))
+(in-list-many? '() '())
+(in-list-many? '() '(x))
+
+
 
 
 
