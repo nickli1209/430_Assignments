@@ -7,16 +7,16 @@
 ;;didnt get to fully implemnting interp, did up to the match for
 ;;FunappC, wrote the first helper called get-fundefC that returns a
 ;;FundefC from a function name (symbol) did get to handling subsitution
-;;
+
 
 
 ;;STRUCTS AND TYPES
-(define-type ExprC (U numC idC binopC FunappC ifleq0?))
+(define-type ExprC (U numC idC binopC appC ifleq0?))
 (struct binopC ([op : Symbol] [left : ExprC] [right : ExprC])#:transparent)
 (struct idC ([name : Symbol])#:transparent)
 (struct numC ([n : Real])#:transparent)
 (struct FundefC([name : Symbol] [params : (Listof Symbol)] [body : ExprC])#:transparent)
-(struct FunappC ([name : Symbol] [args : (Listof ExprC)])#:transparent)
+(struct appC ([name : Symbol] [args : (Listof ExprC)])#:transparent)
 (struct ifleq0? ([check : ExprC] [then : ExprC] [else : ExprC])#:transparent)
 
 
@@ -81,7 +81,7 @@
     ;;would have to change to accept non real exprC as arg
     [(list (? symbol? fname) args ...) (cond
                                          [(member fname valid-ops) (error 'parse "ZODE: Invalid Syntax")]
-                                         [(valid-id? fname) (FunappC fname (map parse args))]
+                                         [(valid-id? fname) (appC fname (map parse args))]
                                          [else (error 'parse "ZODE: Invalid Function Name")])]
     [else     (error 'parse "ZODE: Invalid Syntax")]))
 
@@ -89,11 +89,11 @@
 
 
 ;;PARSE TESTS
-(check-equal? (parse '{f 1 2}) (FunappC 'f (list (numC 1) (numC 2))))
+(check-equal? (parse '{f 1 2}) (appC 'f (list (numC 1) (numC 2))))
 (check-equal? (parse 10) (numC 10))
 (check-equal? (parse '(+ 10 10)) (binopC '+ (numC 10)(numC 10)))
 ;;shouod be numC 1 2 but was a real when list constructed
-(check-equal? (parse '(sum 1 2)) (FunappC 'sum (list (numC 1) (numC 2))))
+(check-equal? (parse '(sum 1 2)) (appC 'sum (list (numC 1) (numC 2))))
 (check-exn
  #px"ZODE: Invalid Syntax"
  (λ()(parse '(+ 2))))
