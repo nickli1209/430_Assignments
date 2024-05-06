@@ -111,12 +111,12 @@
                               [(equal? b 'false)  "false"]
                               [else     (error 'serialize "Invalid boolean value ~e" b)])]
     [(cloV params body env)  "#<procedure>"]
-    [(primV s)               "#<PrimativeOp>"]))
+    [(primV s)               "#<primop>"]))
 
 ;;TEST SERIALIZE
 (check-equal? (serialize (numV 10)) "10")
 (check-equal? (serialize (cloV (list 'x 'y 'z) (appC (idC '+) (list (idC 'x) (numC 10))) '()))"#<procedure>")
-(check-equal? (serialize (primV '+)) "#<PrimativeOp>")
+(check-equal? (serialize (primV '+)) "#<primop>")
 (check-equal? (serialize (strV "hello world")) "hello world")
 (check-equal? (serialize (boolV 'true)) "true")
 (check-equal? (serialize (boolV 'false)) "false")
