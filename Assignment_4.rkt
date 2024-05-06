@@ -10,7 +10,7 @@
 (struct idC ([name : Symbol])#:transparent)
 (struct lambC ([id : (Listof Symbol)] [body : ExprC]) #:transparent)
 (struct strC ([str : String])#:transparent)
-(struct appC([f : Symbol] [args : (Listof ExprC)])#:transparent)
+(struct appC([f : ExprC] [args : (Listof ExprC)])#:transparent)
 (struct ifC ([test : ExprC] [then : ExprC] [else : ExprC])#:transparent) 
 
 ;;for values
@@ -47,12 +47,11 @@
     [(? symbol? name)             (cond
                                     [(allowed? name)       (idC name)]
                                     [else (error 'parse "ZODE: invalid symbol for an id")])] 
-    [(? string? str)               (strC str)]
+    [(? string? str)              (strC str)]
     [(list 'if ': check ': then ': else)     (ifC (parse check) (parse then) (parse else))]
     [(list 'lamb ': (? symbol? id) ... ': body)      (lambC (cast id (Listof Symbol)) (parse body))]
-    [(list (? symbol? f) args ...)                   (appC f (map parse args))]
-    
-    [else                                (error 'parse "ZODE: Invalid Zode Syntax")]))
+    [(? list? aps)                    (appC (parse (first aps)) (map parse (rest aps)))]
+    [else                         (error 'parse "ZODE: Invalid Zode Syntax")]))
 
 
 ;;CLAUSE PARSING ( helper for parsing part of locals) takes sexp, and env
@@ -66,22 +65,31 @@
 ;; so in this case, we will pass x =1 ; y=2 : z =3 to parse-clauses
 
 ;(define (parse-clauses ))
-
+ 
 ;;INTERPING----------------------------------------------------------------
 ;;INTERP EXPRESSIONS (main Interp),input is exp as an ExprC,and env starting with top-env,
 ;;outputs a value...
 (define (interp [exp : ExprC] [env : Env]): Value
   (match exp
-    [(numC n)          (numV n)]
-    [(strC str)        (strV str)]
-    [(idC id)          (lookup id env)]
+    [(numC n)                   (numV n)]
+    [(strC str)                 (strV str)]
+    [(idC id)                   (lookup id env)]
     [(ifC check then else)      (cond
                                   [(equal? (interp check env) (boolV 'true))   (interp then env)]
                                   [(equal? (interp check env) (boolV 'false))  (interp else env)]
                                   [else (error 'interp"ZODE: if condition not a boolean")])]
-    [(lambC params body)          (cloV params body env)]
-    ;;[(appC f args)     ()]
-    ));;if an idc is a bool, it will get subbed to true/false here
+    [(lambC params body)          (cloV params body env)] ;;primV are created by bindings in top-env
+    [(appC f args)              (define args-int (map (λ (arg) (interp (cast arg ExprC) env)) args))
+                                (match (interp f env)
+                                  [(cloV params body env)       (if (equal? (length params) (length args-int))
+                                                                    (interp body (extend-env params args-int env))
+                                                                    (error 'interp "ZODE : Invalid number of arguments in ~e" f))]
+                                  [(primV op)                   (cond
+                                                                  [(> (length args-int) 2) (error 'interp "ZODE : Invalid number of arguments in ~e" op)]
+                                                                  [(equal? op 'error)    (prim-error args-int)]
+                                                                  )]
+                                  [else (error'interp"ZODE: ~e is not a valid application" f)])]
+    ))
 
 
 ;;SERIALIZE-----------------------------------------------------------------
@@ -100,7 +108,7 @@
 
 ;;TEST SERIALIZE
 (check-equal? (serialize (numV 10)) "10")
-(check-equal? (serialize (cloV (list 'x 'y 'z) (appC '+ (list (idC 'x) (numC 10))) '()))"#<procedure>")
+(check-equal? (serialize (cloV (list 'x 'y 'z) (appC (idC '+) (list (idC 'x) (numC 10))) '()))"#<procedure>")
 (check-equal? (serialize (primV '+)) "#<PrimativeOp>")
 (check-equal? (serialize (strV "hello world")) "hello world")
 (check-equal? (serialize (boolV 'true)) "true")
@@ -132,34 +140,55 @@
 
 
 ;; GENERAL HELPERS--------------------------------------------------------------
+;;ALLOWED?------------------------------------------------
 ;;allowed? takes as input a sexp and returns ture if the symbol isnt an
 ;;invalid symbol
 (define (allowed? [sym : Sexp]): Boolean
-  (not (or (equal? sym '+)
-      (equal? sym '-)
-      (equal? sym '*)
-      (equal? sym '/)
+  (not (or 
       (equal? sym 'error)
       (equal? sym 'equal?)
-      (equal? sym '<=))))
+      )))
+
+;;EXTEND_ENV---------------------------------------------
+;;extend-env takes as input a list of params, a list of args cooresponding
+;;to the params, and a current environment
+(define (extend-env [params : (Listof Symbol)] [args : (Listof Value)] [org-env : Env]): Env
+  ;;length of args and params already checked equal ininterp
+  ;;add check here if needed anywhere other than interp appC
+  (define new-env (map Binding params args));;maps each param to each arg in a Binding
+  (append new-env org-env))
+
+;;PRIMV EVALS---------------------------------------------
+;;prim+
+#;(define (prim+ [args : (Listof Value)]): Value
+  )
+
+
+
+;;prim-error takes as input args, a list of vals, returns an error with the
+;;serialized val
+;;takes list for simplicity, valid input is only one value to error
+(define (prim-error [val : (Listof Value)])
+  (error 'user-error"ZODE: user-error ~e" (serialize (first val))))
 
 ;;TESTCASES---------------------------------------------------------------------
 ;;------------------------------------------------------------------------------
 
 ;;Parse Tests-------------------------------------------------------------------
-(check-equal? (parse '{lamb : x y : {+ x 5}}) (lambC (list 'x 'y) (appC '+ (list (idC 'x) (numC 5)))))
+(check-equal? (parse '{lamb : x y : {+ x 5}}) (lambC (list 'x 'y) (appC (idC '+) (list (idC 'x) (numC 5)))))
 (check-equal? (parse '{lamb : x : {+ x {lamb : y : {- y 1}}}})
-              (lambC (list 'x) (appC '+ (list (idC 'x) (lambC (list 'y) (appC '- (list (idC 'y) (numC 1))))))))
-(check-equal? (parse '{/ f g} ) (appC '/ (list (idC 'f) (idC 'g))))
+              (lambC (list 'x) (appC (idC '+) (list (idC 'x) (lambC (list 'y) (appC (idC '-) (list (idC 'y) (numC 1))))))))
+(check-equal? (parse '{/ f g} ) (appC (idC '/) (list (idC 'f) (idC 'g))))
 (check-equal? (parse "test") (strC "test"))
 (check-exn
  #px"ZODE: invalid symbol for an id"
- (λ () (parse '+)))
+ (λ () (parse 'error)))
 (check-equal? (parse '{if : (<= 10 5) : (+ 10 5) : false})
-              (ifC (appC '<= (list (numC 10) (numC 5))) (appC '+ (list (numC 10) (numC 5))) (idC 'false)))
-(check-exn
+              (ifC (appC (idC '<=) (list (numC 10) (numC 5))) (appC (idC '+) (list (numC 10) (numC 5))) (idC 'false)))
+#;(check-exn
  #px"ZODE: Invalid Zode Syntax"
- (λ () (parse (list 3 '& 5))))
+ (λ () (parse (list 3 '& 5))));;with new def of appC, this should get caught as an appC
+;;will not error here, will eror in iterp when no value for appC named 3 in env
 
 
 
