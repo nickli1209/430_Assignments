@@ -50,6 +50,11 @@
     [(? string? str)              (strC str)]
     [(list 'if ': check ': then ': else)     (ifC (parse check) (parse then) (parse else))]
     [(list 'lamb ': (? symbol? id) ... ': body)      (lambC (cast id (Listof Symbol)) (parse body))]
+    [(list 'locals ': clause ... ': ex)        (appC
+                                                (lambC
+                                                 (parse-clause-ids (cast clause (Listof Sexp)))
+                                                 (parse ex))
+                                                (parse-clause-vals (cast clause (Listof Sexp))))]
     ;;maybe need some error checking here for appC parse, 
     [(? list? aps)                    (appC (parse (first aps)) (map parse (rest aps)))]
     [else                         (error 'parse "ZODE: Invalid Zode Syntax")]))
@@ -170,6 +175,19 @@
 (check-equal? (extend-env (list 'x 'y 'z) (list (numV 1) (numV 2) (numV 3)) (list (Binding 'a (numV 10))))
               (list (Binding 'a (numV 10)) (Binding 'x (numV 1)) (Binding 'y (numV 2)) (Binding 'z (numV 3))))
 
+;;PARSE LOCAL-------------------------------------
+;;helper parse function, parses a clause and returns the list of ids
+(define (parse-clause-ids [clauses : Sexp]) : (Listof Symbol)
+  (match clauses
+    [(list (? symbol? id) '= _)                      (cons id '())] ;;single clause case
+    [(list (? symbol? id) '= _ ': more-clauses ...)       (cons id (parse-clause-ids more-clauses))] ;;multiple clauses
+    [else (error 'clause-syn "ZODE: Invalid clause syntax")]))
+
+;;helper parse function, parses a clause and returns the list of vals
+(define (parse-clause-vals [clauses : Sexp]) : (Listof ExprC)
+  (match clauses
+    [(list _ '= val)                            (cons (parse val) '())]
+    [(list _ '= val ': more-clauses ...)            (cons (parse val) (parse-clause-vals more-clauses))]))
 
 ;;PRIMV EVALS---------------------------------------------
 ;;prim+
@@ -291,6 +309,17 @@
  (λ () (parse 'if)))
 (check-equal? (parse '{if : (<= 10 5) : (+ 10 5) : false})
               (ifC (appC (idC '<=) (list (numC 10) (numC 5))) (appC (idC '+) (list (numC 10) (numC 5))) (idC 'false)))
+;;drew parse locals tests
+(check-equal? (parse '{locals : x = 5 : {+ x 1}})
+              (appC (lambC (list 'x) (appC (idC '+) (list (idC 'x) (numC 1)))) (list (numC 5))))
+(check-equal? (parse '{locals : x = 5 : y = 7 : {+ x y}})
+              (appC (lambC (list 'x 'y) (appC (idC '+) (list (idC 'x) (idC 'y)))) (list (numC 5) (numC 7))))
+(check-equal? (parse '{locals : f = {lamb : x : {lamb : y : {+ x y}}} : {{f 3} 7}})
+              (appC (lambC (list 'f) (appC (appC (idC 'f) (list (numC 3))) (list (numC 7))))
+                    (list (lambC (list 'x) (lambC (list 'y) (appC (idC '+) (list (idC 'x) (idC 'y))))))))
+(check-exn
+ #px"ZODE: Invalid clause syntax"
+ (λ () (parse '{locals : x ?= 5 : {+ x 1}})))
 
 ;;parse invalid syntax
 #;(check-exn
