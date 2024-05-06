@@ -69,6 +69,7 @@
 ;;INTERPING----------------------------------------------------------------
 ;;INTERP EXPRESSIONS (main Interp),input is exp as an ExprC,and env starting with top-env,
 ;;outputs a value...
+
 (define (interp [exp : ExprC] [env : Env]): Value
   (match exp
     [(numC n)                   (numV n)]
@@ -83,7 +84,7 @@
                                 (match (interp f env)
                                   [(cloV params body env)       (if (equal? (length params) (length args-int))
                                                                     (interp body (extend-env params args-int env))
-                                                                    (error 'interp "ZODE : Invalid number of arguments in ~e" f))]
+                                                                    (error 'interp "ZODE : Invalid number of arguments in"))]
                                   ;;primV still work in progress, need to finish helpers
                                   [(primV op)                   (cond
                                                                   ;;could do a better check for num args to prims
@@ -162,26 +163,56 @@
   (define new-env (map Binding params args));;maps each param to each arg in a Binding
   (append new-env org-env))
 
+;;test extend-env
+
 
 
 ;;PRIMV EVALS---------------------------------------------
 ;;prim+
-#;(define (prim+ [args : (Listof Value)]): Value
-  )
+(define (prim+ [args : (Listof Value)]): Value
+  (if (equal? (length args) 2)
+      (let ([a (first args)]
+            [b (second args)])
+        (if (and (numV? a) (numV? b))
+            (numV (+ (numV-n a) (numV-n b)))
+            (error 'interp "ZODE: operands must be reals")))
+      (error 'interp "ZODE: expects exactly two operands")))
+
 
 ;;prim-
+(define (prim- [args : (Listof Value)]): Value
+  (numV 0))
 
 ;;prim*
+(define (prim* [args : (Listof Value)]): Value
+  (numV 0))
 
 ;;prim/
+(define (prim/ [args : (Listof Value)]): Value
+  (numV 0))
 
 ;;prim<=
+(define (prim<= [args : (Listof Value)]): Value
+  (numV 0))
 
 ;;prim-equal?
+(define (prim-equal? [args : (Listof Value)]): Value
+  (numV 0))
 
 ;;apply-prims, takes as input a Symbol op, and a list of values args
 ;;applys the appropriate primative operation and returns a Value
+(define (apply-prims [op : Symbol] [args : (Listof Value)]): Value
+  (match op
+    ['+         (prim+ args)]
+    ['*         (prim+ args)]
+    ['-         (prim+ args)]
+    ['/         (prim+ args)]
+    ['<=         (prim+ args)]
+    ['equal?         (prim+ args)]
+    [else         (error 'interp"ZODE: ~e is not a valid operator")])
+  )
 
+;test apply-prims
 
 ;;prim-error takes as input args, a list of vals, returns an error with the
 ;;serialized val
@@ -189,6 +220,7 @@
 (define (prim-error [val : (Listof Value)])
   (error 'user-error"ZODE: user-error ~e" (serialize (first val))))
 
+;;test prim-error
 
 
 
@@ -236,3 +268,15 @@
 ;(check-equal? (top-interp 'true) "true")
 ;(check-equal? (top-interp '{<= 9 10}) "true")
 
+
+
+;;HELPER TESTS------------------------------------------------------------------
+
+;;test prim+-----------------------------------------
+(check-equal? (prim+ (list (numV 1) (numV 2))) (numV 3))
+(check-exn
+ #px"ZODE: operands must be reals"
+ (λ () (prim+ (list (numV 1) (strV "uhoh")))))
+(check-exn
+ #px"ZODE: expects exactly two operands"
+ (λ () (prim+ (list (numV 1) (numV 2) (numV 3)))))
