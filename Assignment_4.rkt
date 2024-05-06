@@ -50,6 +50,7 @@
     [(? string? str)              (strC str)]
     [(list 'if ': check ': then ': else)     (ifC (parse check) (parse then) (parse else))]
     [(list 'lamb ': (? symbol? id) ... ': body)      (lambC (cast id (Listof Symbol)) (parse body))]
+    ;;maybe need some error checking here for appC parse, 
     [(? list? aps)                    (appC (parse (first aps)) (map parse (rest aps)))]
     [else                         (error 'parse "ZODE: Invalid Zode Syntax")]))
 
@@ -91,8 +92,9 @@
                                                                   [(> (length args-int) 2) (error 'interp "ZODE : Invalid number of arguments in ~e" op)]
                                                                   [(equal? op 'error)    (prim-error args-int)]
                                                                   ;;need to add case to apply-prims given the op here
-                                                                  [else (numV 10)])];; temp to please compiler
+                                                                  [else (apply-prims op args-int)])]
                                   [else (error'interp"ZODE: ~e is not a valid application" f)])]))
+
 
 
 ;;SERIALIZE-----------------------------------------------------------------
@@ -222,8 +224,13 @@
 
 ;;prim-equal?
 (define (prim-equal? [args : (Listof Value)]): Value
-  (numV 0))
-
+  (if (equal? (length args) 2)
+      (let ([a (first args)]
+            [b (second args)])
+        (if (equal?  a  b)
+            (boolV 'true)
+            (boolV 'false))) 
+      (error 'interp "ZODE: expects exactly two operands")))
 ;;apply-prims, takes as input a Symbol op, and a list of values args
 ;;applys the appropriate primative operation and returns a Value
 (define (apply-prims [op : Symbol] [args : (Listof Value)]): Value
@@ -233,8 +240,8 @@
     ['-         (prim- args)]
     ['/         (prim/ args)]
     ['<=         (prim<= args)]
-    ['equal?         (prim-equal? args)]
-    [else         (error 'interp"ZODE: ~e is not a valid operator")])
+    ['equal?     (prim-equal? args)]
+    [else         (error 'interp"ZODE: ~e is not a valid operator" op)])
   )
 
 ;test apply-prims
@@ -243,9 +250,15 @@
 (check-equal? (apply-prims '* (list (numV 1) (numV 2))) (numV 2))
 (check-equal? (apply-prims '/ (list (numV 2) (numV 1))) (numV 2))
 (check-equal? (apply-prims '<= (list (numV 1) (numV 2))) (boolV 'true))
+(check-equal? (apply-prims 'equal? (list (numV 1) (numV 1))) (boolV 'true))
+(check-exn
+ #px"ZODE: 'h is not a valid operator"
+ (λ () (apply-prims 'h (list (numV 1) (numV 2)))))
+ 
 ;;prim-error takes as input args, a list of vals, returns an error with the
 ;;serialized val
 ;;takes list for simplicity, valid input is only one value to error
+
 (define (prim-error [val : (Listof Value)])
   (if (equal? (length val) 1)
       (error 'user-error(format "ZODE: user-error ~a" (serialize (first val))))
@@ -264,7 +277,7 @@
 ;;TESTCASES---------------------------------------------------------------------
 ;;------------------------------------------------------------------------------
 
-;;Parse Tests-------------------------------------------------------------------
+;;PARSE_TESTS-------------------------------------------------------------------
 (check-equal? (parse '{lamb : x y : {+ x 5}}) (lambC (list 'x 'y) (appC (idC '+) (list (idC 'x) (numC 5)))))
 (check-equal? (parse '{lamb : x : {+ x {lamb : y : {- y 1}}}})
               (lambC (list 'x) (appC (idC '+) (list (idC 'x) (lambC (list 'y) (appC (idC '-) (list (idC 'y) (numC 1))))))))
@@ -275,11 +288,15 @@
  (λ () (parse 'if)))
 (check-equal? (parse '{if : (<= 10 5) : (+ 10 5) : false})
               (ifC (appC (idC '<=) (list (numC 10) (numC 5))) (appC (idC '+) (list (numC 10) (numC 5))) (idC 'false)))
+
+;;parse invalid syntax
 #;(check-exn
  #px"ZODE: Invalid Zode Syntax"
  (λ () (parse (list 3 '& 5))));;with new def of appC, this should get caught as an appC
 ;;will not error here, will eror in iterp when no value for appC named 3 in env
-
+(check-exn
+ #px"ZODE: Invalid Zode Syntax"
+ (λ () (parse #t)))
 
 
 ;;TEST INTERP-------------------------------------------------------------------
@@ -354,3 +371,11 @@
 (check-exn
  #px"ZODE: expects exactly two operands"
  (λ () (prim<= (list (numV 1) (numV 2) (numV 3)))))
+
+;;test prim-equal?
+(check-equal? (prim-equal? (list (numV 10) (strV "hi"))) (boolV 'false))
+(check-equal? (prim-equal? (list (strV "hi") (strV "hi"))) (boolV 'true))
+(check-exn
+ #px"ZODE: expects exactly two operands"
+ (λ () (prim-equal? (list (numV 1) (numV 2) (numV 3)))))
+
