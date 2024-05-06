@@ -1,7 +1,8 @@
 #lang typed/racket
 (require typed/rackunit)
 ;;ASSIGNMENT 4, NICK LI DREW KIM
-;;JUST STARTING...
+;;JUST STARTING... 34 tests failed..
+
 ;;TYPES AND STRUCTS---------------------------------------------------------
 ;;for expressions AST
 (define-type ExprC (U numC idC lambC appC strC ifC))
@@ -42,20 +43,17 @@
 ;;Main Parse, input sexp, outputs exprC representing AST
 (define (parse [exp : Sexp]) : ExprC
   (match exp
-    [(? real? n)               (numC n)]
-    [(? symbol? name)        (idC name)] ;;bools should get caught here, then looked up in env in interp
-    [(? string? str)         (strC str)]
+    [(? real? n)                  (numC n)]
+    [(? symbol? name)             (cond
+                                    [(allowed? name)       (idC name)]
+                                    [else (error 'parse "ZODE: invalid symbol for an id")])] 
+    [(? string? str)               (strC str)]
+    [(list 'if ': check ': then ': else)     (ifC (parse check) (parse then) (parse else))]
     [(list 'lamb ': (? symbol? id) ... ': body)      (lambC (cast id (Listof Symbol)) (parse body))]
-    [(list (? symbol? f) args ...)       (appC f (map parse args))]))
+    [(list (? symbol? f) args ...)                   (appC f (map parse args))]
+    
+    [else                                (error 'parse "ZODE: Invalid Zode Syntax")]))
 
-
-
-;;Parse Tests:
-(check-equal? (parse '{lamb : x y : {+ x 5}}) (lambC (list 'x 'y) (appC '+ (list (idC 'x) (numC 5)))))
-(check-equal? (parse '{lamb : x : {+ x {lamb : y : {- y 1}}}}) (lambC (list 'x) (appC '+ (list (idC 'x) (lambC (list 'y) (appC '- (list (idC 'y) (numC 1))))))))
-(check-equal? (parse '{/ f g} ) (appC '/ (list (idC 'f) (idC 'g))))
-(check-equal? (parse "test") (strC "test"))
-;;(check-equal? (parse 'true) (boolC #t))
 
 ;;CLAUSE PARSING ( helper for parsing part of locals) takes sexp, and env
 #;(<CLauses> ::= <id> = <expr>
@@ -67,6 +65,7 @@
 ;;    {+ {+ x y} z}}
 ;; so in this case, we will pass x =1 ; y=2 : z =3 to parse-clauses
 
+;(define (parse-clauses ))
 
 ;;INTERPING----------------------------------------------------------------
 ;;INTERP EXPRESSIONS (main Interp),input is exp as an ExprC,and env starting with top-env,
@@ -75,7 +74,14 @@
   (match exp
     [(numC n)          (numV n)]
     [(strC str)        (strV str)]
-    [(idC id)          (lookup id env)]));;if an idc is a bool, it will get subbed to true/false here
+    [(idC id)          (lookup id env)]
+    [(ifC check then else)      (cond
+                                  [(equal? (interp check env) (boolV 'true))   (interp then env)]
+                                  [(equal? (interp check env) (boolV 'false))  (interp else env)]
+                                  [else (error 'interp"ZODE: if condition not a boolean")])]
+    [(lambC params body)          (cloV params body env)]
+    ;;[(appC f args)     ()]
+    ));;if an idc is a bool, it will get subbed to true/false here
 
 
 ;;SERIALIZE-----------------------------------------------------------------
@@ -111,11 +117,6 @@
 (define (top-interp [s : Sexp]) : String
   (serialize (interp (parse s) top-env)))
 
-;;TEST TOP-INTERP
-(check-equal? (top-interp "hello world") "hello world")
-(check-equal? (top-interp 10) "10")
-
-
 
 ;;ENVIRONMENT STUFF:------------------------------------------------------
 ;;!!!edit this functionality to handle checl to top-env if not in current env
@@ -131,12 +132,34 @@
 
 
 ;; GENERAL HELPERS--------------------------------------------------------------
-;;
-
-
+;;allowed? takes as input a sexp and returns ture if the symbol isnt an
+;;invalid symbol
+(define (allowed? [sym : Sexp]): Boolean
+  (not (or (equal? sym '+)
+      (equal? sym '-)
+      (equal? sym '*)
+      (equal? sym '/)
+      (equal? sym 'error)
+      (equal? sym 'equal?)
+      (equal? sym '<=))))
 
 ;;TESTCASES---------------------------------------------------------------------
 ;;------------------------------------------------------------------------------
+
+;;Parse Tests-------------------------------------------------------------------
+(check-equal? (parse '{lamb : x y : {+ x 5}}) (lambC (list 'x 'y) (appC '+ (list (idC 'x) (numC 5)))))
+(check-equal? (parse '{lamb : x : {+ x {lamb : y : {- y 1}}}})
+              (lambC (list 'x) (appC '+ (list (idC 'x) (lambC (list 'y) (appC '- (list (idC 'y) (numC 1))))))))
+(check-equal? (parse '{/ f g} ) (appC '/ (list (idC 'f) (idC 'g))))
+(check-equal? (parse "test") (strC "test"))
+(check-exn
+ #px"ZODE: invalid symbol for an id"
+ (λ () (parse '+)))
+(check-equal? (parse '{if : (<= 10 5) : (+ 10 5) : false})
+              (ifC (appC '<= (list (numC 10) (numC 5))) (appC '+ (list (numC 10) (numC 5))) (idC 'false)))
+(check-exn
+ #px"ZODE: Invalid Zode Syntax"
+ (λ () (parse (list 3 '& 5))))
 
 
 
@@ -147,4 +170,19 @@
 (check-exn ;;tests lookup on variable not bound in env
  #px"ZODE: name not found"
  (λ () (interp (idC 'y) (list (Binding 'x (numV 10))))))
+;;test if
+(check-equal? (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (boolV 'true)))) (numV 1))
+(check-equal? (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (boolV 'false)))) (numV 0))
+(check-exn
+ #px"ZODE: if condition not a boolean"
+ (λ () (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (numV 10))))))
+;;test lamb
+(check-equal? (interp (lambC (list 'x 'y 'z) (numC 10)) '()) (cloV (list 'x 'y 'z) (numC 10) '()))
+
+
+;;TEST TOP-INTERP---------------------------------------------------------------
+(check-equal? (top-interp "hello world") "hello world")
+(check-equal? (top-interp 10) "10")
+;(check-equal? (top-interp 'true) "true")
+;(check-equal? (top-interp '{<= 9 10}) "true")
 
