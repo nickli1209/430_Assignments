@@ -76,25 +76,27 @@
     [(numC n)                   (numV n)]
     [(strC str)                 (strV str)]
     [(idC id)                   (lookup id env)]
-    [(ifC check then else)      (cond
-                                  [(equal? (interp check env) (boolV 'true))   (interp then env)]
-                                  [(equal? (interp check env) (boolV 'false))  (interp else env)]
-                                  [else (error 'interp"ZODE: if condition not a boolean")])]
-    [(lambC params body)          (cloV params body env)] ;;primV are created by bindings in top-env
-    [(appC f args)              (define args-int (map (λ (arg) (interp (cast arg ExprC) env)) args))
-                                (match (interp f env)
-                                  [(cloV params body env)       (if (equal? (length params) (length args-int))
-                                                                    (interp body (extend-env params args-int env))
-                                                                    (error 'interp "ZODE : Invalid number of arguments in"))]
-                                  ;;primV still work in progress, need to finish helpers
-                                  [(primV op)                   (cond
-                                                                  ;;could do a better check for num args to prims
-                                                                  [(> (length args-int) 2) (error 'interp "ZODE : Invalid number of arguments in ~e" op)]
-                                                                  [(equal? op 'error)    (prim-error args-int)]
-                                                                  ;;need to add case to apply-prims given the op here
-                                                                  [else (apply-prims op args-int)])]
-                                  [else (error'interp"ZODE: ~e is not a valid application" f)])]))
-
+    [(ifC check then else) (cond
+                             [(equal? (interp check env) (boolV 'true))   (interp then env)]
+                             [(equal? (interp check env) (boolV 'false))  (interp else env)]
+                             [else (error 'interp"ZODE: if condition not a boolean")])]
+    [(lambC params body)   (cloV params body env)] ;;primV are created by bindings in top-env
+    [(appC f args)         (define args-int (map (λ (arg) (interp (cast arg ExprC) env)) args))
+                           (match (interp f env)
+                             [(cloV params body env)
+                              (if (equal? (length params) (length args-int))
+                                  (interp body (extend-env params args-int env))
+                                  (error 'interp "ZODE : Invalid number of arguments in function call"))]
+                             ;;primV still work in progress, need to finish helpers
+                             [(primV op)       (cond
+                                                 ;;could do a better check for num args to prims
+                                                 [(> (length args-int) 2)
+                                                  (error 'interp "ZODE : Invalid number of arguments in ~e" op)]
+                                                 [(equal? op 'error)    (prim-error args-int)]
+                                                 ;;need to add case to apply-prims given the op here
+                                                 [else (apply-prims op args-int)])]
+                             [else (error'interp (format "ZODE: ~a is not a valid application"
+                                                         (serialize (interp f env))))])]))
 
 
 ;;SERIALIZE-----------------------------------------------------------------
@@ -280,7 +282,8 @@
 ;;PARSE_TESTS-------------------------------------------------------------------
 (check-equal? (parse '{lamb : x y : {+ x 5}}) (lambC (list 'x 'y) (appC (idC '+) (list (idC 'x) (numC 5)))))
 (check-equal? (parse '{lamb : x : {+ x {lamb : y : {- y 1}}}})
-              (lambC (list 'x) (appC (idC '+) (list (idC 'x) (lambC (list 'y) (appC (idC '-) (list (idC 'y) (numC 1))))))))
+              (lambC (list 'x) (appC (idC '+) (list (idC 'x)
+                                                    (lambC (list 'y) (appC (idC '-) (list (idC 'y) (numC 1))))))))
 (check-equal? (parse '{/ f g} ) (appC (idC '/) (list (idC 'f) (idC 'g))))
 (check-equal? (parse "test") (strC "test"))
 (check-exn
@@ -319,10 +322,25 @@
 ;;TEST TOP-INTERP---------------------------------------------------------------
 (check-equal? (top-interp "hello world") "hello world")
 (check-equal? (top-interp 10) "10")
-;(check-equal? (top-interp 'true) "true")
-;(check-equal? (top-interp '{<= 9 10}) "true")
-
-
+(check-equal? (top-interp 'true) "true")
+(check-equal? (top-interp '{<= 9 10}) "true")
+(check-equal? (top-interp '{if : {equal? "nick" "nick"} : {/ 10 2} : {- 10 4}}) "5")
+(check-equal? (top-interp '{if : {equal? "nick" "nick"} : {/ 10 2} : {- 10 4}}) "5")
+(check-equal? (top-interp '{if : {equal? "nick" "drew"} : {/ 10 2} : {- 10 4}}) "6")
+(check-exn
+ #px"ZODE : Invalid number of arguments in '<="
+ (λ () (top-interp '{<= 10 20 30})))
+(check-exn
+ #px"ZODE: user-error NOT GOOD"
+ (λ () (top-interp '{error "NOT GOOD"})))
+(check-equal? (top-interp '{{lamb : x y : {+ x y}} 5 6}) "11")
+(check-exn
+ #px"ZODE : Invalid number of arguments in function call"
+ (λ () (top-interp '{{lamb : x y : {+ x y}} 5 6 7})))
+;;not valid application test
+(check-exn
+ #px"ZODE: 7 is not a valid application"
+ (λ () (top-interp '{7 8 9})))
 
 ;;HELPER TESTS------------------------------------------------------------------
 
