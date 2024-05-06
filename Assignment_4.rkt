@@ -140,6 +140,7 @@
 
 
 ;; GENERAL HELPERS--------------------------------------------------------------
+
 ;;ALLOWED?------------------------------------------------
 ;;allowed? takes as input a sexp and returns ture if the symbol isnt an
 ;;invalid symbol
@@ -148,6 +149,7 @@
       (equal? sym 'error)
       (equal? sym 'equal?)
       )))
+
 
 ;;EXTEND_ENV---------------------------------------------
 ;;extend-env takes as input a list of params, a list of args cooresponding
@@ -158,11 +160,25 @@
   (define new-env (map Binding params args));;maps each param to each arg in a Binding
   (append new-env org-env))
 
+
+
 ;;PRIMV EVALS---------------------------------------------
 ;;prim+
 #;(define (prim+ [args : (Listof Value)]): Value
   )
 
+;;prim-
+
+;;prim*
+
+;;prim/
+
+;;prim<=
+
+;;prim-equal?
+
+;;apply-prims, takes as input a Symbol op, and a list of values args
+;;applys the appropriate primative operation and returns a Value
 
 
 ;;prim-error takes as input args, a list of vals, returns an error with the
@@ -170,6 +186,9 @@
 ;;takes list for simplicity, valid input is only one value to error
 (define (prim-error [val : (Listof Value)])
   (error 'user-error"ZODE: user-error ~e" (serialize (first val))))
+
+
+
 
 ;;TESTCASES---------------------------------------------------------------------
 ;;------------------------------------------------------------------------------
