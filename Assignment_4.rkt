@@ -84,12 +84,14 @@
                                   [(cloV params body env)       (if (equal? (length params) (length args-int))
                                                                     (interp body (extend-env params args-int env))
                                                                     (error 'interp "ZODE : Invalid number of arguments in ~e" f))]
+                                  ;;primV still work in progress, need to finish helpers
                                   [(primV op)                   (cond
+                                                                  ;;could do a better check for num args to prims
                                                                   [(> (length args-int) 2) (error 'interp "ZODE : Invalid number of arguments in ~e" op)]
                                                                   [(equal? op 'error)    (prim-error args-int)]
-                                                                  )]
-                                  [else (error'interp"ZODE: ~e is not a valid application" f)])]
-    ))
+                                                                  ;;need to add case to apply-prims given the op here
+                                                                  [else (numV 10)])];; temp to please compiler
+                                  [else (error'interp"ZODE: ~e is not a valid application" f)])]))
 
 
 ;;SERIALIZE-----------------------------------------------------------------
