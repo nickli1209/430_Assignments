@@ -149,8 +149,7 @@
 ;;invalid symbol
 (define (allowed? [sym : Sexp]): Boolean
   (not (or 
-      (equal? sym 'error)
-      (equal? sym 'equal?)
+      (equal? sym 'if)
       )))
 
 
@@ -161,10 +160,11 @@
   ;;length of args and params already checked equal ininterp
   ;;add check here if needed anywhere other than interp appC
   (define new-env (map Binding params args));;maps each param to each arg in a Binding
-  (append new-env org-env))
+  (append org-env new-env))
 
 ;;test extend-env
-
+(check-equal? (extend-env (list 'x 'y 'z) (list (numV 1) (numV 2) (numV 3)) (list (Binding 'a (numV 10))))
+              (list (Binding 'a (numV 10)) (Binding 'x (numV 1)) (Binding 'y (numV 2)) (Binding 'z (numV 3))))
 
 
 ;;PRIMV EVALS---------------------------------------------
@@ -178,22 +178,47 @@
             (error 'interp "ZODE: operands must be reals")))
       (error 'interp "ZODE: expects exactly two operands")))
 
-
 ;;prim-
 (define (prim- [args : (Listof Value)]): Value
-  (numV 0))
+  (if (equal? (length args) 2)
+      (let ([a (first args)]
+            [b (second args)])
+        (if (and (numV? a) (numV? b))
+            (numV (- (numV-n a) (numV-n b)))
+            (error 'interp "ZODE: operands must be reals")))
+      (error 'interp "ZODE: expects exactly two operands")))
 
 ;;prim*
 (define (prim* [args : (Listof Value)]): Value
-  (numV 0))
+  (if (equal? (length args) 2)
+      (let ([a (first args)]
+            [b (second args)])
+        (if (and (numV? a) (numV? b))
+            (numV (* (numV-n a) (numV-n b)))
+            (error 'interp "ZODE: operands must be reals")))
+      (error 'interp "ZODE: expects exactly two operands")))
 
 ;;prim/
 (define (prim/ [args : (Listof Value)]): Value
-  (numV 0))
+  (if (equal? (length args) 2)
+      (let ([a (first args)]
+            [b (second args)])
+        (if (and (numV? a) (numV? b))
+            (numV (/ (numV-n a) (numV-n b)))
+            (error 'interp "ZODE: operands must be reals")))
+      (error 'interp "ZODE: expects exactly two operands")))
 
 ;;prim<=
 (define (prim<= [args : (Listof Value)]): Value
-  (numV 0))
+  (if (equal? (length args) 2)
+      (let ([a (first args)]
+            [b (second args)])
+        (if (and (numV? a) (numV? b))
+            (if (<= (numV-n a) (numV-n b))
+                (boolV 'true)
+                (boolV 'false))
+            (error 'interp "ZODE: operands must be reals")))
+      (error 'interp "ZODE: expects exactly two operands")))
 
 ;;prim-equal?
 (define (prim-equal? [args : (Listof Value)]): Value
@@ -204,24 +229,36 @@
 (define (apply-prims [op : Symbol] [args : (Listof Value)]): Value
   (match op
     ['+         (prim+ args)]
-    ['*         (prim+ args)]
-    ['-         (prim+ args)]
-    ['/         (prim+ args)]
-    ['<=         (prim+ args)]
-    ['equal?         (prim+ args)]
+    ['*         (prim* args)]
+    ['-         (prim- args)]
+    ['/         (prim/ args)]
+    ['<=         (prim<= args)]
+    ['equal?         (prim-equal? args)]
     [else         (error 'interp"ZODE: ~e is not a valid operator")])
   )
 
 ;test apply-prims
-
+(check-equal? (apply-prims '+ (list (numV 1) (numV 2))) (numV 3))
+(check-equal? (apply-prims '- (list (numV 1) (numV 2))) (numV -1))
+(check-equal? (apply-prims '* (list (numV 1) (numV 2))) (numV 2))
+(check-equal? (apply-prims '/ (list (numV 2) (numV 1))) (numV 2))
+(check-equal? (apply-prims '<= (list (numV 1) (numV 2))) (boolV 'true))
 ;;prim-error takes as input args, a list of vals, returns an error with the
 ;;serialized val
 ;;takes list for simplicity, valid input is only one value to error
 (define (prim-error [val : (Listof Value)])
-  (error 'user-error"ZODE: user-error ~e" (serialize (first val))))
+  (if (equal? (length val) 1)
+      (error 'user-error(format "ZODE: user-error ~a" (serialize (first val))))
+      (error 'interp"ZODE: error function takes only 1 input")))
+
 
 ;;test prim-error
-
+(check-exn
+ #px"ZODE: user-error uh oh"
+ (λ ()(prim-error (list (strV "uh oh")))))
+(check-exn
+ #px"ZODE: error function takes only 1 input"
+ (λ ()(prim-error (list (strV "uh oh") (strV "too many")))))
 
 
 ;;TESTCASES---------------------------------------------------------------------
@@ -235,7 +272,7 @@
 (check-equal? (parse "test") (strC "test"))
 (check-exn
  #px"ZODE: invalid symbol for an id"
- (λ () (parse 'error)))
+ (λ () (parse 'if)))
 (check-equal? (parse '{if : (<= 10 5) : (+ 10 5) : false})
               (ifC (appC (idC '<=) (list (numC 10) (numC 5))) (appC (idC '+) (list (numC 10) (numC 5))) (idC 'false)))
 #;(check-exn
@@ -280,3 +317,40 @@
 (check-exn
  #px"ZODE: expects exactly two operands"
  (λ () (prim+ (list (numV 1) (numV 2) (numV 3)))))
+
+;;test prim-
+(check-equal? (prim- (list (numV 1) (numV 2))) (numV -1))
+(check-exn
+ #px"ZODE: operands must be reals"
+ (λ () (prim- (list (numV 1) (strV "uhoh")))))
+(check-exn
+ #px"ZODE: expects exactly two operands"
+ (λ () (prim- (list (numV 1) (numV 2) (numV 3)))))
+
+;;test prim*
+(check-equal? (prim* (list (numV 10) (numV 2))) (numV 20))
+(check-exn
+ #px"ZODE: operands must be reals"
+ (λ () (prim* (list (numV 1) (strV "uhoh")))))
+(check-exn
+ #px"ZODE: expects exactly two operands"
+ (λ () (prim* (list (numV 1) (numV 2) (numV 3)))))
+
+;;test prim/
+(check-equal? (prim/ (list (numV 10) (numV 2))) (numV 5))
+(check-exn
+ #px"ZODE: operands must be reals"
+ (λ () (prim/ (list (numV 1) (strV "uhoh")))))
+(check-exn
+ #px"ZODE: expects exactly two operands"
+ (λ () (prim/ (list (numV 1) (numV 2) (numV 3)))))
+
+;;test prim<=
+(check-equal? (prim<= (list (numV 10) (numV 2))) (boolV 'false))
+(check-equal? (prim<= (list (numV 5) (numV 10))) (boolV 'true))
+(check-exn
+ #px"ZODE: operands must be reals"
+ (λ () (prim<= (list (numV 1) (strV "uhoh")))))
+(check-exn
+ #px"ZODE: expects exactly two operands"
+ (λ () (prim<= (list (numV 1) (numV 2) (numV 3)))))
