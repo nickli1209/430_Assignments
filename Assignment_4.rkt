@@ -56,6 +56,7 @@
                                                         (error 'parse "ZODE: Functions can't have duplicate params")
                                                         (lambC syms (parse body)))
                                                   (error 'parse"ZODE: Function contains non-symbol param"))]
+    ;;need to make sure id's in locals are valid using allowed? helper
     [(list 'locals ': clause ... ': ex)        (if (has-dups? (parse-clause-ids (cast clause (Listof Sexp))))
                                                   (error 'parse"ZODE: Locals can't have duplicate clauses")
                                                   (appC
