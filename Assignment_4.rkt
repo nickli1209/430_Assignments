@@ -2,7 +2,7 @@
 (require typed/rackunit)
 ;;ASSIGNMENT 4, NICK LI DREW KIM
 ;;Should be fully implemented, ironing out kinks,
-;;and syntax differences... 10 tests failed.. 
+;;and syntax differences... 2 tests failed.. 
 
 ;;TYPES AND STRUCTS---------------------------------------------------------
 ;;for expressions AST
@@ -50,12 +50,22 @@
                                     [else (error 'parse "ZODE: invalid symbol for an id")])] 
     [(? string? str)              (strC str)]
     [(list 'if ': check ': then ': else)     (ifC (parse check) (parse then) (parse else))]
-    [(list 'lamb ': (? symbol? id) ... ': body)      (lambC (cast id (Listof Symbol)) (parse body))]
-    [(list 'locals ': clause ... ': ex)        (appC
-                                                (lambC
-                                                 (parse-clause-ids (cast clause (Listof Sexp)))
-                                                 (parse ex))
-                                                (parse-clause-vals (cast clause (Listof Sexp))))]
+    [(list 'lamb ': params ... ': body)         (define syms (filter symbol? params))
+                                                 (if(equal? (length syms) (length params))
+                                                    (if (has-dups? syms)
+                                                        (error 'parse "ZODE: Functions can't have duplicate params")
+                                                        (lambC syms (parse body)))
+                                                  (error 'parse"ZODE: Function contains non-symbol param"))]
+    [(list 'locals ': clause ... ': ex)        (if (has-dups? (parse-clause-ids (cast clause (Listof Sexp))))
+                                                  (error 'parse"ZODE: Locals can't have duplicate clauses")
+                                                  (appC
+                                                   (lambC
+                                                    (parse-clause-ids (cast clause (Listof Sexp)))
+                                                    (parse ex))
+                                                   (parse-clause-vals (cast clause (Listof Sexp)))))]
+    ;; probably not the best solution for invaid lamb and local but def easiest
+    [(list 'locals ': clause ... ':)           (error 'parse"ZODE: Locals must have a body expression")]
+    [(list 'lamb ': _ ...)                            (error 'parse"ZODE: Invalid syntax for lamb")]
     ;;maybe need some error checking here for appC parse, 
     [(? list? aps)                    (appC (parse (first aps)) (map parse (rest aps)))]
     [else                         (error 'parse "ZODE: Invalid Zode Syntax")]))
@@ -145,14 +155,26 @@
 
 ;; GENERAL HELPERS--------------------------------------------------------------
 
+;;has-dups? takes a list of symbols, returns true if there are duplicates in the list
+;;false otherwise
+(define (has-dups? [lst : (Listof Symbol)]): Boolean
+  (match lst
+    ['()   #f]
+    [(cons f r)     (if (member f r)
+                        #t
+                        (has-dups? r))]))
+
 ;;ALLOWED?------------------------------------------------
 ;;allowed? takes as input a sexp and returns ture if the symbol isnt an
 ;;invalid symbol
 (define (allowed? [sym : Sexp]): Boolean
   (not (or 
       (equal? sym 'if)
+      (equal? sym 'lamb)
+      (equal? sym 'locals)
+      (equal? sym ':)
+      (equal? sym '=)
       )))
-
 
 ;;EXTEND_ENV---------------------------------------------
 ;;extend-env takes as input a list of params, a list of args cooresponding
@@ -161,8 +183,8 @@
   ;;length of args and params already checked equal ininterp
   ;;add check here if needed anywhere other than interp appC
   (define new-env (map Binding params args));;maps each param to each arg in a Binding
-  (append org-env new-env))
-
+  ;;flipped order of appends, to allow for prim ops as variables, that way looks up local before top-env
+  (append new-env org-env))
 
 ;;PRIMV EVALS---------------------------------------------
 ;;prim+
@@ -201,7 +223,9 @@
       (let ([a (first args)]
             [b (second args)])
         (if (and (numV? a) (numV? b))
-            (numV (/ (numV-n a) (numV-n b)))
+            (if (equal? (numV-n b) 0)
+                (error 'interp"ZODE:Divide by zero undefined")
+                (numV (/ (numV-n a) (numV-n b))))
             (error 'interp "ZODE: operands must be reals")))
       (error 'interp "ZODE: expects exactly two operands")))
 
@@ -289,6 +313,31 @@
  #px"ZODE: Invalid Zode Syntax"
  (λ () (parse #t)))
 
+;;parse two identical params to lamb
+(check-exn
+ #px"ZODE: Functions can't have duplicate params"
+ (λ()(parse '{lamb : x x : 10})))
+
+;;test non symbol params to lamb
+(check-exn
+ #px"ZODE: Function contains non-symbol param"
+ (λ()(parse '{lamb :  1 2 x y : {+ 2 3}})))
+
+;;local with duplicate clauses
+(check-exn
+ #px"ZODE: Locals can't have duplicate clauses"
+ (λ()(parse '{locals : z = {lamb : : 3}
+                     : z = 9
+                     : {z}})))
+
+;;parse no body local--not the best solution for it...
+(check-exn
+ #px"ZODE: Locals must have a body expression"
+ (λ()(parse '{locals : x = 5 :})))
+(check-exn
+ #px"ZODE: Invalid syntax for lamb"
+ (λ()(parse '{lamb : i : "Hello" 31/7})))
+
 
 ;;TEST INTERP-------------------------------------------------------------------
 
@@ -306,7 +355,6 @@
  (λ () (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (numV 10))))))
 ;;test lamb
 (check-equal? (interp (lambC (list 'x 'y 'z) (numC 10)) '()) (cloV (list 'x 'y 'z) (numC 10) '()))
-
 
 ;;TEST SERIALIZE
 (check-equal? (serialize (numV 10)) "10")
@@ -345,13 +393,27 @@
 (check-equal? (top-interp '{locals : f = {lamb : x y : {+ {* y y} {* x x}}}
                                    : g = {+ 5 6}
                                    :{f g 1}}) "122")
+;;check divide by zero
+(check-exn
+ #px"ZODE:Divide by zero undefined"
+ (λ() (top-interp '{/ 10 0})))
 
+;;+ as param, fails...why?
+(check-equal? (top-interp '{{lamb : / : {* / /}} 5}) "25")
 
 ;;HELPER TESTS------------------------------------------------------------------
 
-;;test extend-env
+;;test has-dups?
+(check-equal? (has-dups? (list 'a 'b 'c 'd)) #f)
+(check-equal? (has-dups? (list 'a 'b 'c 'c)) #t)
+
+;;test extend-env, flipped order, to allow for prim ops as variables
 (check-equal? (extend-env (list 'x 'y 'z) (list (numV 1) (numV 2) (numV 3)) (list (Binding 'a (numV 10))))
-              (list (Binding 'a (numV 10)) (Binding 'x (numV 1)) (Binding 'y (numV 2)) (Binding 'z (numV 3))))
+              (list
+               (Binding 'x (numV 1))
+               (Binding 'y (numV 2))
+               (Binding 'z (numV 3))
+               (Binding 'a (numV 10))))
 
 ;;test prim+-----------------------------------------
 (check-equal? (prim+ (list (numV 1) (numV 2))) (numV 3))
@@ -424,3 +486,5 @@
 (check-exn
  #px"ZODE: 'h is not a valid operator"
  (λ () (apply-prims 'h (list (numV 1) (numV 2)))))
+
+
