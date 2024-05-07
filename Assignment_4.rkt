@@ -71,12 +71,21 @@
     [(? list? aps)                    (appC (parse (first aps)) (map parse (rest aps)))]
     [else                         (error 'parse "ZODE: Invalid Zode Syntax")]))
 
+;;expected exception with message containing ZODE on test expression: '(parse '(locals : : = "" : "World"))
+
 ;;PARSE LOCALS-------------------------------------
 ;;helper parse function, parses a clause and returns the list of ids
 (define (parse-clause-ids [clauses : Sexp]) : (Listof Symbol)
   (match clauses
-    [(list (? symbol? id) '= _)                      (cons id '())] ;;single clause case
-    [(list (? symbol? id) '= _ ': more-clauses ...)       (cons id (parse-clause-ids more-clauses))] ;;multiple clauses
+    ;;single clause case
+    [(list (? symbol? id) '= _)        (if
+                                         (allowed? id)
+                                         (cons id '())
+                                         (error 'invalid-id "ZODE: Invalid Identifier Name"))]
+    ;;multiple clauses
+    [(list (? symbol? id) '= _ ': more-clauses ...)       (if (allowed? id)
+                                                            (cons id (parse-clause-ids more-clauses))
+                                                            (error 'invalid-id "ZODE: Invalid Identifier Name"))]
     [else (error 'clause-syn "ZODE: Invalid clause syntax")]))
 
 ;;helper parse function, parses a clause and returns the list of vals
@@ -124,7 +133,7 @@
 (define (serialize [val : Value]) : String
   (match val
     [(numV n)             (~v n)]
-    [(strV str)              str]
+    [(strV str)           (~v str)]
     [(boolV b)              (cond
                               [(equal? b 'true)  "true"]
                               [(equal? b 'false)  "false"]
@@ -304,6 +313,12 @@
 (check-exn
  #px"ZODE: Invalid clause syntax"
  (λ () (parse '{locals : x ?= 5 : {+ x 1}})))
+(check-exn
+ #px"ZODE: Invalid Identifier Name"
+ (λ () (parse '{locals : : = "" : "World"})))
+(check-exn
+ #px"ZODE: Invalid Identifier Name"
+ (λ () (parse '{locals : : = "" : x = 5 : "World"})))
 
 ;;parse invalid syntax
 #;(check-exn
@@ -361,7 +376,7 @@
 (check-equal? (serialize (numV 10)) "10")
 (check-equal? (serialize (cloV (list 'x 'y 'z) (appC (idC '+) (list (idC 'x) (numC 10))) '()))"#<procedure>")
 (check-equal? (serialize (primV '+)) "#<primop>")
-(check-equal? (serialize (strV "hello world")) "hello world")
+(check-equal? (serialize (strV "hello world")) "\"hello world\"")
 (check-equal? (serialize (boolV 'true)) "true")
 (check-equal? (serialize (boolV 'false)) "false")
 (check-exn ;;tests not a bolean
@@ -369,7 +384,7 @@
  (λ () (serialize (boolV 'notabool))))
 
 ;;TEST TOP-INTERP---------------------------------------------------------------
-(check-equal? (top-interp "hello world") "hello world")
+(check-equal? (top-interp "hello world") "\"hello world\"")
 (check-equal? (top-interp 10) "10")
 (check-equal? (top-interp 'true) "true")
 (check-equal? (top-interp '{<= 9 10}) "true")
@@ -380,7 +395,7 @@
  #px"ZODE : Invalid number of arguments in '<="
  (λ () (top-interp '{<= 10 20 30})))
 (check-exn
- #px"ZODE: user-error NOT GOOD"
+ #px"ZODE: user-error \"NOT GOOD\""
  (λ () (top-interp '{error "NOT GOOD"})))
 (check-equal? (top-interp '{{lamb : x y : {+ x y}} 5 6}) "11")
 (check-exn
@@ -471,7 +486,7 @@
 
 ;;test prim-error
 (check-exn
- #px"ZODE: user-error uh oh"
+ #px"ZODE: user-error \"uh oh\""
  (λ ()(prim-error (list (strV "uh oh")))))
 (check-exn
  #px"ZODE: error function takes only 1 input"
