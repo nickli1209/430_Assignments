@@ -1,7 +1,8 @@
 #lang typed/racket
 (require typed/rackunit)
 ;;ASSIGNMENT 4, NICK LI DREW KIM
-;;JUST STARTING... 34 tests failed..
+;;Should be fully implemented, ironing out kinks,
+;;and syntax differences... 10 tests failed.. 
 
 ;;TYPES AND STRUCTS---------------------------------------------------------
 ;;for expressions AST
@@ -59,18 +60,20 @@
     [(? list? aps)                    (appC (parse (first aps)) (map parse (rest aps)))]
     [else                         (error 'parse "ZODE: Invalid Zode Syntax")]))
 
+;;PARSE LOCALS-------------------------------------
+;;helper parse function, parses a clause and returns the list of ids
+(define (parse-clause-ids [clauses : Sexp]) : (Listof Symbol)
+  (match clauses
+    [(list (? symbol? id) '= _)                      (cons id '())] ;;single clause case
+    [(list (? symbol? id) '= _ ': more-clauses ...)       (cons id (parse-clause-ids more-clauses))] ;;multiple clauses
+    [else (error 'clause-syn "ZODE: Invalid clause syntax")]))
 
-;;CLAUSE PARSING ( helper for parsing part of locals) takes sexp, and env
-#;(<CLauses> ::= <id> = <expr>
-          || <id> = <expr> : <clauses>)
+;;helper parse function, parses a clause and returns the list of vals
+(define (parse-clause-vals [clauses : Sexp]) : (Listof ExprC)
+  (match clauses
+    [(list _ '= val)                            (cons (parse val) '())]
+    [(list _ '= val ': more-clauses ...)            (cons (parse val) (parse-clause-vals more-clauses))]))
 
-;;just takes in the clause stuff into a helper called parse-clauses,
-;;that disregards the body of a local, and the name of a locasl,
-;;so {locals : x =1 ; y=2 : z =3:
-;;    {+ {+ x y} z}}
-;; so in this case, we will pass x =1 ; y=2 : z =3 to parse-clauses
-
-;(define (parse-clauses ))
  
 ;;INTERPING----------------------------------------------------------------
 ;;INTERP EXPRESSIONS (main Interp),input is exp as an ExprC,and env starting with top-env,
@@ -118,17 +121,6 @@
     [(cloV params body env)  "#<procedure>"]
     [(primV s)               "#<primop>"]))
 
-;;TEST SERIALIZE
-(check-equal? (serialize (numV 10)) "10")
-(check-equal? (serialize (cloV (list 'x 'y 'z) (appC (idC '+) (list (idC 'x) (numC 10))) '()))"#<procedure>")
-(check-equal? (serialize (primV '+)) "#<primop>")
-(check-equal? (serialize (strV "hello world")) "hello world")
-(check-equal? (serialize (boolV 'true)) "true")
-(check-equal? (serialize (boolV 'false)) "false")
-(check-exn ;;tests not a bolean
- #px"Invalid boolean value 'notabool"
- (λ () (serialize (boolV 'notabool))))
-
 
 
 ;;TOP-INTERP---------------------------------------------------------------
@@ -171,23 +163,6 @@
   (define new-env (map Binding params args));;maps each param to each arg in a Binding
   (append org-env new-env))
 
-;;test extend-env
-(check-equal? (extend-env (list 'x 'y 'z) (list (numV 1) (numV 2) (numV 3)) (list (Binding 'a (numV 10))))
-              (list (Binding 'a (numV 10)) (Binding 'x (numV 1)) (Binding 'y (numV 2)) (Binding 'z (numV 3))))
-
-;;PARSE LOCAL-------------------------------------
-;;helper parse function, parses a clause and returns the list of ids
-(define (parse-clause-ids [clauses : Sexp]) : (Listof Symbol)
-  (match clauses
-    [(list (? symbol? id) '= _)                      (cons id '())] ;;single clause case
-    [(list (? symbol? id) '= _ ': more-clauses ...)       (cons id (parse-clause-ids more-clauses))] ;;multiple clauses
-    [else (error 'clause-syn "ZODE: Invalid clause syntax")]))
-
-;;helper parse function, parses a clause and returns the list of vals
-(define (parse-clause-vals [clauses : Sexp]) : (Listof ExprC)
-  (match clauses
-    [(list _ '= val)                            (cons (parse val) '())]
-    [(list _ '= val ': more-clauses ...)            (cons (parse val) (parse-clause-vals more-clauses))]))
 
 ;;PRIMV EVALS---------------------------------------------
 ;;prim+
@@ -251,6 +226,8 @@
             (boolV 'true)
             (boolV 'false))) 
       (error 'interp "ZODE: expects exactly two operands")))
+
+
 ;;apply-prims, takes as input a Symbol op, and a list of values args
 ;;applys the appropriate primative operation and returns a Value
 (define (apply-prims [op : Symbol] [args : (Listof Value)]): Value
@@ -264,38 +241,20 @@
     [else         (error 'interp"ZODE: ~e is not a valid operator" op)])
   )
 
-;test apply-prims
-(check-equal? (apply-prims '+ (list (numV 1) (numV 2))) (numV 3))
-(check-equal? (apply-prims '- (list (numV 1) (numV 2))) (numV -1))
-(check-equal? (apply-prims '* (list (numV 1) (numV 2))) (numV 2))
-(check-equal? (apply-prims '/ (list (numV 2) (numV 1))) (numV 2))
-(check-equal? (apply-prims '<= (list (numV 1) (numV 2))) (boolV 'true))
-(check-equal? (apply-prims 'equal? (list (numV 1) (numV 1))) (boolV 'true))
-(check-exn
- #px"ZODE: 'h is not a valid operator"
- (λ () (apply-prims 'h (list (numV 1) (numV 2)))))
- 
+
 ;;prim-error takes as input args, a list of vals, returns an error with the
 ;;serialized val
 ;;takes list for simplicity, valid input is only one value to error
-
 (define (prim-error [val : (Listof Value)])
   (if (equal? (length val) 1)
       (error 'user-error(format "ZODE: user-error ~a" (serialize (first val))))
       (error 'interp"ZODE: error function takes only 1 input")))
 
 
-;;test prim-error
-(check-exn
- #px"ZODE: user-error uh oh"
- (λ ()(prim-error (list (strV "uh oh")))))
-(check-exn
- #px"ZODE: error function takes only 1 input"
- (λ ()(prim-error (list (strV "uh oh") (strV "too many")))))
-
 
 ;;TESTCASES---------------------------------------------------------------------
 ;;------------------------------------------------------------------------------
+
 
 ;;PARSE_TESTS-------------------------------------------------------------------
 (check-equal? (parse '{lamb : x y : {+ x 5}}) (lambC (list 'x 'y) (appC (idC '+) (list (idC 'x) (numC 5)))))
@@ -332,6 +291,7 @@
 
 
 ;;TEST INTERP-------------------------------------------------------------------
+
 (check-equal? (interp (numC 10) '()) (numV 10))
 (check-equal? (interp (strC "hello world") '()) (strV "hello world"))
 (check-equal? (interp (idC 'x) (list (Binding 'x (numV 10)))) (numV 10))
@@ -347,6 +307,17 @@
 ;;test lamb
 (check-equal? (interp (lambC (list 'x 'y 'z) (numC 10)) '()) (cloV (list 'x 'y 'z) (numC 10) '()))
 
+
+;;TEST SERIALIZE
+(check-equal? (serialize (numV 10)) "10")
+(check-equal? (serialize (cloV (list 'x 'y 'z) (appC (idC '+) (list (idC 'x) (numC 10))) '()))"#<procedure>")
+(check-equal? (serialize (primV '+)) "#<primop>")
+(check-equal? (serialize (strV "hello world")) "hello world")
+(check-equal? (serialize (boolV 'true)) "true")
+(check-equal? (serialize (boolV 'false)) "false")
+(check-exn ;;tests not a bolean
+ #px"Invalid boolean value 'notabool"
+ (λ () (serialize (boolV 'notabool))))
 
 ;;TEST TOP-INTERP---------------------------------------------------------------
 (check-equal? (top-interp "hello world") "hello world")
@@ -370,8 +341,17 @@
 (check-exn
  #px"ZODE: 7 is not a valid application"
  (λ () (top-interp '{7 8 9})))
+;;test locals
+(check-equal? (top-interp '{locals : f = {lamb : x y : {+ {* y y} {* x x}}}
+                                   : g = {+ 5 6}
+                                   :{f g 1}}) "122")
+
 
 ;;HELPER TESTS------------------------------------------------------------------
+
+;;test extend-env
+(check-equal? (extend-env (list 'x 'y 'z) (list (numV 1) (numV 2) (numV 3)) (list (Binding 'a (numV 10))))
+              (list (Binding 'a (numV 10)) (Binding 'x (numV 1)) (Binding 'y (numV 2)) (Binding 'z (numV 3))))
 
 ;;test prim+-----------------------------------------
 (check-equal? (prim+ (list (numV 1) (numV 2))) (numV 3))
@@ -426,3 +406,21 @@
  #px"ZODE: expects exactly two operands"
  (λ () (prim-equal? (list (numV 1) (numV 2) (numV 3)))))
 
+;;test prim-error
+(check-exn
+ #px"ZODE: user-error uh oh"
+ (λ ()(prim-error (list (strV "uh oh")))))
+(check-exn
+ #px"ZODE: error function takes only 1 input"
+ (λ ()(prim-error (list (strV "uh oh") (strV "too many")))))
+
+;test apply-prims
+(check-equal? (apply-prims '+ (list (numV 1) (numV 2))) (numV 3))
+(check-equal? (apply-prims '- (list (numV 1) (numV 2))) (numV -1))
+(check-equal? (apply-prims '* (list (numV 1) (numV 2))) (numV 2))
+(check-equal? (apply-prims '/ (list (numV 2) (numV 1))) (numV 2))
+(check-equal? (apply-prims '<= (list (numV 1) (numV 2))) (boolV 'true))
+(check-equal? (apply-prims 'equal? (list (numV 1) (numV 1))) (boolV 'true))
+(check-exn
+ #px"ZODE: 'h is not a valid operator"
+ (λ () (apply-prims 'h (list (numV 1) (numV 2)))))
