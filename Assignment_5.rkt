@@ -37,7 +37,12 @@
                       (Binding 'equal? (primV 'equal?))
                       (Binding 'error (primV 'error))
                       (Binding 'true (boolV 'true))
-                      (Binding 'false (boolV 'false))))
+                      (Binding 'false (boolV 'false))
+                      (Binding 'println (primV 'println))
+                      (Binding 'read-num (primV 'read-num))
+                      (Binding 'read-str (primV 'read-str))
+                      (Binding 'seq (primV 'seq))
+                      (Binding '++ (primV '++))))
 
 
 ;;PARSING-------------------------------------------------------------------
@@ -121,10 +126,12 @@
                                                  [(> (length args-int) 2)
                                                   (error 'interp "ZODE : Invalid number of arguments in ~e" op)]
                                                  [(equal? op 'error)    (prim-error args-int)]
+                                                 [(equal? op 'println)   (prim-println args-int)]
                                                  ;;need to add case to apply-prims given the op here
                                                  [else (apply-prims op args-int)])]
                              [else (error'interp (format "ZODE: ~a is not a valid application"
                                                          (serialize (interp f env))))])]))
+
 
 
 ;;SERIALIZE-----------------------------------------------------------------
@@ -250,6 +257,19 @@
                 (boolV 'false))
             (error 'interp "ZODE: operands must be reals")))
       (error 'interp "ZODE: expects exactly two operands")))
+
+
+;;prim-println
+(define (prim-println [args : (Listof Value)]): boolV
+  (match args
+    [(list (strV s)) (println s) (boolV 'true)]
+    [else (error'interp"ZODE: Invalid input to println")]))
+
+;;test prim-println
+(check-equal? (prim-println (list (strV "hello"))) (boolV 'true))
+(check-exn
+ #px"ZODE: Invalid input to println"
+ (λ() (prim-println (list (numV 10)))))
 
 ;;prim-equal?
 (define (prim-equal? [args : (Listof Value)]): Value
@@ -416,6 +436,9 @@
 
 ;;+ as param, fails...why?
 (check-equal? (top-interp '{{lamb : / : {* / /}} 5}) "25")
+
+;;test println
+(check-equal? (top-interp '{println "hello"}) "true")
 
 ;;HELPER TESTS------------------------------------------------------------------
 
