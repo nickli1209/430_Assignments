@@ -126,7 +126,7 @@
                                                  [(> (length args-int) 2)
                                                   (error 'interp "ZODE : Invalid number of arguments in ~e" op)]
                                                  [(equal? op 'error)    (prim-error args-int)]
-                                                 [(equal? op 'println)   (prim-println args-int)]
+                                                 ;;[(equal? op 'println)   (prim-println args-int)]
                                                  ;;need to add case to apply-prims given the op here
                                                  [else (apply-prims op args-int)])]
                              [else (error'interp (format "ZODE: ~a is not a valid application"
@@ -271,6 +271,17 @@
  #px"ZODE: Invalid input to println"
  (λ() (prim-println (list (numV 10)))))
 
+;;prim-read-num
+(define (prim-read-num) : Value
+  (printf ">")
+  (define input (string->number (cast (read-line) String)))
+  (if (equal? #f input) (error 'interp "ZODE: Invalid input to read-num") (numV (cast input Real))))
+
+;;prim-read-str
+(define (prim-read-str) : Value
+  (printf ">")
+  (strV (cast (read-line) String)))
+
 ;;prim-equal?
 (define (prim-equal? [args : (Listof Value)]): Value
   (if (equal? (length args) 2)
@@ -292,6 +303,11 @@
     ['/         (prim/ args)]
     ['<=         (prim<= args)]
     ['equal?     (prim-equal? args)]
+    ['println    (prim-println args)]
+    ['read-num   (prim-read-num)]
+    ['read-str   (prim-read-str)]
+;;     ['seq        ()]
+;;     ['++         ()]
     [else         (error 'interp"ZODE: ~e is not a valid operator" op)])
   )
 
