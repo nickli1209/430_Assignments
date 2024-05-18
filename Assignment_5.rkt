@@ -42,7 +42,8 @@
                       (Binding 'read-num (primV 'read-num))
                       (Binding 'read-str (primV 'read-str))
                       (Binding 'seq (primV 'seq))
-                      (Binding '++ (primV '++))))
+                      (Binding '++ (primV '++))
+                      (Binding 'printint (primV 'printint))))
 
 
 ;;PARSING-------------------------------------------------------------------
@@ -122,16 +123,12 @@
                                   (error 'interp "ZODE : Invalid number of arguments in function call"))]
                              ;;primV still work in progress, need to finish helpers
                              [(primV op)       (cond
-                                                 ;;could do a better check for num args to prims
-                                                 [(> (length args-int) 2)
-                                                  (error 'interp "ZODE : Invalid number of arguments in ~e" op)]
                                                  [(equal? op 'error)    (prim-error args-int)]
                                                  ;;[(equal? op 'println)   (prim-println args-int)]
                                                  ;;need to add case to apply-prims given the op here
                                                  [else (apply-prims op args-int)])]
                              [else (error'interp (format "ZODE: ~a is not a valid application"
                                                          (serialize (interp f env))))])]))
-
 
 
 ;;SERIALIZE-----------------------------------------------------------------
@@ -265,12 +262,19 @@
     [(list (strV s)) (println s) (boolV 'true)]
     [else (error'interp"ZODE: Invalid input to println")]))
 
+;;prim-printint
+(define (prim-printint [args : (Listof Value)]) : boolV
+  (match args
+    [(list (numV n)) (println (~v n)) (boolV 'true)]
+    [else (error'interp"ZODE: Invalid input to printint")]))
+
 ;;prim-++
 (define (prim-++ [args : (Listof Value)]) : Value
   (if(not(empty? args))
-     (strV (serialize (strV (apply string-append (map serialize2 args)))))
+     (strV (apply string-append (map serialize2 args)))
      (error 'interp "ZODE:")))
 
+;;prim-seq
 (define (prim-seq [args : (Listof Value)]) : Value
   (if (not (empty? args))
       (last args)
@@ -313,6 +317,7 @@
     ['read-str   (prim-read-str)]
     ['seq        (prim-seq args)]
     ['++         (prim-++ args)]
+    ['printint   (prim-printint args)]
     [else         (error 'interp"ZODE: ~e is not a valid operator" op)])
   )
 
@@ -436,6 +441,17 @@
  #px"Invalid boolean value 'notabool"
  (λ () (serialize (boolV 'notabool))))
 
+;;TEST SERIALIZE2
+(check-equal? (serialize2 (numV 10)) "10")
+(check-equal? (serialize2 (cloV (list 'x 'y 'z) (appC (idC '+) (list (idC 'x) (numC 10))) '()))"#<procedure>")
+(check-equal? (serialize2 (primV '+)) "#<primop>")
+(check-equal? (serialize2 (strV "hello world")) "hello world")
+(check-equal? (serialize2 (boolV 'true)) "true")
+(check-equal? (serialize2 (boolV 'false)) "false")
+(check-exn ;;tests not a bolean
+ #px"Invalid boolean value 'notabool"
+ (λ () (serialize2 (boolV 'notabool))))
+
 ;;TEST TOP-INTERP---------------------------------------------------------------
 (check-equal? (top-interp "hello world") "\"hello world\"")
 (check-equal? (top-interp 10) "10")
@@ -445,7 +461,7 @@
 (check-equal? (top-interp '{if : {equal? "nick" "nick"} : {/ 10 2} : {- 10 4}}) "5")
 (check-equal? (top-interp '{if : {equal? "nick" "drew"} : {/ 10 2} : {- 10 4}}) "6")
 (check-exn
- #px"ZODE : Invalid number of arguments in '<="
+ #px"ZODE: expects exactly two operands"
  (λ () (top-interp '{<= 10 20 30})))
 (check-exn
  #px"ZODE: user-error \"NOT GOOD\""
@@ -472,6 +488,12 @@
 
 ;;test println
 (check-equal? (top-interp '{println "hello"}) "true")
+
+;;test seq
+(check-equal? (top-interp '{seq {+ 10 20} {println "HELLO"} {+ 10 5}}) "15")
+
+;;test ++
+(check-equal? (top-interp '{++ "twelve" 12 "thirteen" 13}) "\"twelve12thirteen13\"")
 
 ;;HELPER TESTS------------------------------------------------------------------
 
@@ -550,7 +572,7 @@
 
 
 ;;test prim-++
-(check-equal? (prim-++ (list (strV "hello") (strV "jones"))) (strV "\"hellojones\""))
+(check-equal? (prim-++ (list (strV "hello") (strV "jones"))) (strV "hellojones"))
 (check-exn
  #px"ZODE:"
  (λ ()(prim-++ '())))
@@ -560,6 +582,12 @@
 (check-exn
  #px"ZODE: Invalid input to println"
  (λ() (prim-println (list (numV 10)))))
+
+;;test prim-printint
+(check-equal? (prim-printint (list (numV 10))) (boolV 'true))
+(check-exn
+ #px"ZODE: Invalid input to printint"
+ (λ() (prim-printint (list (strV "bjdndjfn")))))
 
 ;;test prim-seq
 (check-equal? (prim-seq (list (numV 8) (numV 10))) (numV 10))
@@ -578,4 +606,123 @@
  #px"ZODE: 'h is not a valid operator"
  (λ () (apply-prims 'h (list (numV 1) (numV 2)))))
 
+
+(define example-program
+  '{seq {println "Welcome to the reverse calculator game!"}
+        {println "using a combination of the operations:"}
+        {println "A. Divide by 2"}
+        {println "B. Multiply by 3"}
+        {println "C. add 1"}
+        {println "D. subtract 1"}
+        {println "Your goal is to get from the start number to the target number"}
+        {println "in as few moves as possible. Good luck!"}
+        {locals : start = {seq {println "Enter the starting number"}
+                               {read-num}}
+                : target = {seq {println "Enter the target number"}
+                                {read-num}}
+                ;;main game loop, recursion self passing
+                : {locals : game = {lamb : self current target move
+                                         : {if : {equal? current target}
+                                               : {seq {println "Congrats! You won on move:"}
+                                                      {printint move}}
+                                               : {locals : op = {seq {println "-------------------------"}
+                                                                     {println "CURRENT MOVE:"}
+                                                                     {printint move}
+                                                                     {println "Current number:"}
+                                                                     {printint current}
+                                                                     {println "Target number:"}
+                                                                     {printint target}
+                                                                     {println "Choose operation:"}
+                                                                     {println "A:(Divide by 2)"}
+                                                                     {println "B:(Mult by 3)"}
+                                                                     {println "C:(Add 1)"}
+                                                                     {println "D:(Subtract 1)"}
+                                                                     {read-str}}
+                                                         : {if : {equal? op "A"}
+                                                               : {self self {/ current 2} target {+ 1 move}}
+                                                               :{if : {equal? op "B"}
+                                                                    : {self self {* 3 current} target {+ 1 move}}
+                                                                    : {if : {equal? op "C"}
+                                                                          : {self self {+ 1 current} target {+ 1 move}}
+                                                                          :
+                                                                          {if
+                                                                           : {equal? op "D"}
+                                                                           : {self self {- current 1} target {+ 1 move}}
+                                                                           : {seq
+                                                                              {println "Invalid Operator!"}
+                                                                              {self self current target move}}}}}}}}}
+                          : {game game start target 0}}}})
+
+
+;;uncomment this to run, re comment before submission,
+;;hand in doesnt like it, not sure why
+;;(top-interp example-program)
+
+;;SAMPLE RUN
+;; "Welcome to the reverse calculator game!"
+;; "using a combination of the operations:"
+;; "A. Divide by 2"
+;; "B. Multiply by 3"
+;; "C. add 1"
+;; "D. subtract 1"
+;; "Your goal is to get from the start number to the target number"
+;; "in as few moves as possible. Good luck!"
+;; "Enter the starting number"
+;; >13
+;; "Enter the target number"
+;; >2
+;; "-------------------------"
+;; "CURRENT MOVE:"
+;; "0"
+;; "Current number:"
+;; "13"
+;; "Target number:"
+;; "2"
+;; "Choose operation:"
+;; "A:(Divide by 2)"
+;; "B:(Mult by 3)"
+;; "C:(Add 1)"
+;; "D:(Subtract 1)"
+;; >D
+;; "-------------------------"
+;; "CURRENT MOVE:"
+;; "1"
+;; "Current number:"
+;; "12"
+;; "Target number:"
+;; "2"
+;; "Choose operation:"
+;; "A:(Divide by 2)"
+;; "B:(Mult by 3)"
+;; "C:(Add 1)"
+;; "D:(Subtract 1)"
+;; >A
+;; "-------------------------"
+;; "CURRENT MOVE:"
+;; "2"
+;; "Current number:"
+;; "6"
+;; "Target number:"
+;; "2"
+;; "Choose operation:"
+;; "A:(Divide by 2)"
+;; "B:(Mult by 3)"
+;; "C:(Add 1)"
+;; "D:(Subtract 1)"
+;; >A
+;; "-------------------------"
+;; "CURRENT MOVE:"
+;; "3"
+;; "Current number:"
+;; "3"
+;; "Target number:"
+;; "2"
+;; "Choose operation:"
+;; "A:(Divide by 2)"
+;; "B:(Mult by 3)"
+;; "C:(Add 1)"
+;; "D:(Subtract 1)"
+;; >D
+;; "Congrats! You won on move:"
+;; "4"
 
