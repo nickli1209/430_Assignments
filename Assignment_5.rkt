@@ -265,11 +265,16 @@
     [(list (strV s)) (println s) (boolV 'true)]
     [else (error'interp"ZODE: Invalid input to println")]))
 
-;;test prim-println
-(check-equal? (prim-println (list (strV "hello"))) (boolV 'true))
-(check-exn
- #px"ZODE: Invalid input to println"
- (λ() (prim-println (list (numV 10)))))
+;;prim-++
+(define (prim-++ [args : (Listof Value)]) : Value
+  (if(not(empty? args))
+     (strV (serialize (strV (apply string-append (map serialize2 args)))))
+     (error 'interp "ZODE:")))
+
+(define (prim-seq [args : (Listof Value)]) : Value
+  (if (not (empty? args))
+      (last args)
+      (error 'interp "ZODE: seq expects at least one arguement")))
 
 ;;prim-read-num
 (define (prim-read-num) : Value
@@ -306,8 +311,8 @@
     ['println    (prim-println args)]
     ['read-num   (prim-read-num)]
     ['read-str   (prim-read-str)]
-;;     ['seq        ()]
-;;     ['++         ()]
+    ['seq        (prim-seq args)]
+    ['++         (prim-++ args)]
     [else         (error 'interp"ZODE: ~e is not a valid operator" op)])
   )
 
@@ -320,6 +325,18 @@
       (error 'user-error(format "ZODE: user-error ~a" (serialize (first val))))
       (error 'interp"ZODE: error function takes only 1 input")))
 
+
+;;serialize 2, no /'s
+(define (serialize2 [val : Value]) : String
+  (match val
+    [(numV n)             (~v n)]
+    [(strV str)           str]
+    [(boolV b)              (cond
+                              [(equal? b 'true)  "true"]
+                              [(equal? b 'false)  "false"]
+                              [else     (error 'serialize2 "Invalid boolean value ~e" b)])]
+    [(cloV params body env)  "#<procedure>"]
+    [(primV s)               "#<primop>"]))
 
 
 ;;TESTCASES---------------------------------------------------------------------
@@ -530,6 +547,25 @@
 (check-exn
  #px"ZODE: error function takes only 1 input"
  (λ ()(prim-error (list (strV "uh oh") (strV "too many")))))
+
+
+;;test prim-++
+(check-equal? (prim-++ (list (strV "hello") (strV "jones"))) (strV "\"hellojones\""))
+(check-exn
+ #px"ZODE:"
+ (λ ()(prim-++ '())))
+
+;;test prim-println
+(check-equal? (prim-println (list (strV "hello"))) (boolV 'true))
+(check-exn
+ #px"ZODE: Invalid input to println"
+ (λ() (prim-println (list (numV 10)))))
+
+;;test prim-seq
+(check-equal? (prim-seq (list (numV 8) (numV 10))) (numV 10))
+(check-exn
+ #px"ZODE: seq expects at least one arguement"
+ (λ()(prim-seq '())))
 
 ;test apply-prims
 (check-equal? (apply-prims '+ (list (numV 1) (numV 2))) (numV 3))
