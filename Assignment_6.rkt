@@ -296,8 +296,18 @@
 ;;prim-aset!
 
 ;;prim-substring
+;;substring takes a string and a start and endinf index and returns the
+;;cooresponding substring
+(define (prim-substring [args : (Listof Value)]): strV
+  (match args
+    [(list (strV str) (numV (? exact-integer? s)) (numV (? exact-integer? e))) (strV (substring str s e))]
+    [else (error 'interp"ZODE: substring must take three arguement, string, int, int")]))
 
-
+;;test prim-substring
+(check-equal? (prim-substring (list (strV "hello") (numV 1) (numV 3))) (strV "ell"))
+(check-exn
+ #px"ZODE: substring"
+ (λ()(prim-substring (list (strV "hello") (numV 10)))))
 
 
 
