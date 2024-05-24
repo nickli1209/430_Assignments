@@ -111,25 +111,25 @@
     [(list _ '= val ': more-clauses ...)            (cons (parse val) (parse-clause-vals more-clauses))]))
 
  
-#;(;;INTERPING----------------------------------------------------------------
+;;INTERPING----------------------------------------------------------------
 ;;INTERP EXPRESSIONS (main Interp),input is exp as an ExprC,and env starting with top-env,
 ;;outputs a value...
 
 (define (interp [exp : ExprC] [env : Env] [store : Store ]): Value
   (match exp
     [(numC n)                   (numV n)]
-    [(strC str)                 (strV str)]
-    [(idC id)                   (lookup id env)]
+    [(strC str)                  (strV str)]
+    [(idC id)                   (lookup id env store)]
     [(ifC check then else) (cond
-                             [(equal? (interp check env) (boolV 'true))   (interp then env)]
-                             [(equal? (interp check env) (boolV 'false))  (interp else env)]
+                             [(equal? (interp check env store) (boolV 'true))   (interp then env store)]
+                             [(equal? (interp check env store) (boolV 'false))  (interp else env store)]
                              [else (error 'interp"ZODE: if condition not a boolean")])]
     [(lambC params body)   (cloV params body env)] ;;primV are created by bindings in top-env
-    [(appC f args)         (define args-int (map (λ (arg) (interp (cast arg ExprC) env)) args))
-                           (match (interp f env)
+    [(appC f args)         (define args-int (map (λ (arg) (interp (cast arg ExprC) env store)) args))
+                           (match (interp f env store)
                              [(cloV params body env)
                               (if (equal? (length params) (length args-int))
-                                  (interp body (extend-env params args-int env))
+                                  (interp body (extend-env params args-int env store)store)
                                   (error 'interp "ZODE : Invalid number of arguments in function call"))]
                              ;;primV still work in progress, need to finish helpers
                              [(primV op)       (cond
@@ -138,7 +138,7 @@
                                                  ;;need to add case to apply-prims given the op here
                                                  [else (apply-prims op args-int)])]
                              [else (error'interp (format "ZODE: ~a is not a valid application"
-                                                         (serialize (interp f env))))])]))
+                                                         (serialize (interp f env store))))])]))
 
 
 ;;SERIALIZE-----------------------------------------------------------------
@@ -154,7 +154,7 @@
                               [else     (error 'serialize "Invalid boolean value ~e" b)])]
     [(cloV params body env)  "#<procedure>"]
     [(primV s)               "#<primop>"]
-    [(nullV n)            ("null")]))
+    [(nullV n)            "null"]))
 
 
 
@@ -162,8 +162,7 @@
 ;;takes as input a sexp, calls parse, then interp, then serialize, returns string
 ;;representing the result of the code
 (define (top-interp [s : Sexp]) : String
-  (serialize (interp (parse s) top-env )))
-)
+  (serialize (interp (parse s) top-env (init-store))))
 
 ;;ENVIRONMENT STUFF:------------------------------------------------------
 ;;!!!edit this functionality to handle checl to top-env if not in current env
@@ -205,13 +204,14 @@
 
 ;;add-to-store takes a single value and a store and adds the value to the
 ;;store at proper spot
-(define (add-to-store [store : Store] [val : Value]) : Void
+(define (add-to-store [store : Store] [val : Value]) : Natural
   (define cur (get-numV store 0))
   (if (>= cur (vector-length store))
       (error 'store "ZODE: Out of memory")
       (begin
         (vector-set! store cur val)
-        (vector-set! store 0 (numV (+ cur 1))))))
+        (vector-set! store 0 (numV (+ cur 1)))
+        cur)))
 
 ;;allocate allocates space in the store, adds vals, incriments counter
 ;;returns original mem location
@@ -249,13 +249,14 @@
       (equal? sym ':=)
       )))
 
-#;(;;EXTEND_ENV---------------------------------------------
+;;EXTEND_ENV---------------------------------------------
 ;;extend-env takes as input a list of params, a list of args cooresponding
 ;;to the params, and a current environment
-(define (extend-env [params : (Listof Symbol)] [args : (Listof Value)] [org-env : Env]): Env
+(define (extend-env [params : (Listof Symbol)] [args : (Listof Value)] [org-env : Env] [store : Store]): Env
   ;;length of args and params already checked equal ininterp
   ;;add check here if needed anywhere other than interp appC
-  (define new-env (map Binding params args));;maps each param to each arg in a Binding
+  (define locs (map(lambda ([arg : Value]) (add-to-store store arg)) args))
+  (define new-env (map Binding params locs));;maps each param to each arg in a Binding
   ;;flipped order of appends, to allow for prim ops as variables, that way looks up local before top-env
   (append new-env org-env))
 
@@ -406,7 +407,7 @@
                               [(equal? b 'false)  "false"]
                               [else     (error 'serialize2 "Invalid boolean value ~e" b)])]
     [(cloV params body env)  "#<procedure>"]
-    [(primV s)               "#<primop>"])))
+    [(primV s)               "#<primop>"]))
 
 
 #;(;;TESTCASES---------------------------------------------------------------------
