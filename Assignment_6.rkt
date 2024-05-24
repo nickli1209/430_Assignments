@@ -205,20 +205,20 @@
 
 ;;add-to-store takes a single value and a store and adds the value to the
 ;;store at proper spot
-(define (add-to-store [store : Store] [val : Value]) : Natural
+(define (add-to-store [store : Store] [val : Value]) : Void
   (define cur (get-numV store 0))
   (if (>= cur (vector-length store))
       (error 'store "ZODE: Out of memory")
       (begin
         (vector-set! store cur val)
-        (vector-set! store 0 (numV (+ cur 1)))
-        cur)))
-;;test add-to-store ;;to do next, drew start  here i got add-to-store working
+        (vector-set! store 0 (numV (+ cur 1))))))
 
-
-
-;;allocate allocates space in the 
-
+;;allocate allocates space in the store, adds vals, incriments counter
+;;returns original mem location
+(define (allocate [store : Store] [vals : (Listof Value)]): Natural
+  (define base (get-numV store 0))
+  (map(lambda ([val : Value]) (add-to-store store val))vals)
+  base)
 
 ;; GENERAL HELPERS--------------------------------------------------------------
 ;;gets the num of counter from a numV in store without casting
@@ -667,6 +667,7 @@
 
 ;;STORE TESTS--------------------------------------------------------------------------
 ;;test init-store
+;;global test store for all tests
 (define test-store (init-store))
 (check-equal? (vector-ref test-store 0) (numV 20))
 (check-equal? (vector-ref test-store 7) (primV 'error))
@@ -679,3 +680,7 @@
  #px"ZODE: Expected numV at location 1"
  (λ()(get-numV test-store 1)))
 
+;;test add-to-store ;;to do next, drew start  here i got add-to-store working
+(add-to-store test-store (numV 1))
+(check-equal? (vector-ref test-store 0) (numV 21))
+(check-equal? (vector-ref test-store 20) (numV 1))
