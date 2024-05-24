@@ -15,7 +15,7 @@
 (struct ifC ([test : ExprC] [then : ExprC] [else : ExprC])#:transparent) 
 
 ;;for values
-(define-type Value(U numV boolV strV cloV primV))
+(define-type Value(U numV boolV strV cloV primV nullV))
 (struct numV ([n : Real])#:transparent)
 (struct boolV ([b : Symbol])#:transparent)
 (struct strV ([str : String])#:transparent)
@@ -176,28 +176,47 @@
 
 ;;init store could take as input the top environment, and initailizes an array
 ;;of size 100, could paramatrize later and add top-env param later
-(define (init-store [top-env : Env]): Store
-  (define store (make-vector 100))
-  (vector-set! store 0 (numV 1)))
-  
-
-(define (init-store-helper [top-env : Env] [store : Store]): Store
-  (match top-env
-    ['()                               (cast store Store)]
-    [(cons (Binding n l ) rst)         (begin (cond
-                                                [(equal? n 'true)       (vector-set! store l (boolV 'true))]
-                                                [(equal? n 'false)      (vector-set! store l (boolV 'false))]
-                                                [(equal? n 'null)       (vector-set! store l (nullV 'null))]
-                                                [else                        (vector-set! store l (primV n))])
-                                              (vector-set! store 0 (numV (+ (numV-n (vector-ref store 0)) 1)))
-                                              (init-store-helper rst store))]))
+(define (init-store) : Store
+  (define store (make-vector 100)) 
+  (vector-set! store 0 (numV 20))
+  (vector-set! store 1 (primV '+))
+  (vector-set! store 2 (primV '-))
+  (vector-set! store 3 (primV '*))
+  (vector-set! store 4 (primV '/))
+  (vector-set! store 5 (primV '<=))
+  (vector-set! store 6 (primV 'equal?))
+  (vector-set! store 7 (primV 'error))
+  (vector-set! store 8 (boolV 'true))
+  (vector-set! store 9 (boolV 'false))
+  (vector-set! store 10 (primV 'println))
+  (vector-set! store 11 (primV 'seq))
+  (vector-set! store 12 (primV '++))
+  (vector-set! store 13 (primV 'printint))
+  (vector-set! store 14 (primV 'make-array))
+  (vector-set! store 15 (primV 'array))
+  (vector-set! store 16 (primV 'aref))
+  (vector-set! store 17 (primV 'aset!))
+  (vector-set! store 18 (primV 'substring))
+  (vector-set! store 19 (nullV 'null))
+  (cast store Store))
 
 ;;test init-store
-(define test-store (init-store (list (Binding '+ 1) (Binding 'true 8) (Binding 'false 9) (Binding 'null 21))))
-(check-equal? (vector-ref test-store 0) (primV '+))
-(check-equal? (vector-ref test-store 7) (boolV 'true))
-(check-equal? (vector-ref test-store 8) (boolV 'false))
-(check-equal? (vector-ref test-store 20) (nullV 'null))
+(define test-store (init-store))
+(check-equal? (vector-ref test-store 0) (numV 20))
+(check-equal? (vector-ref test-store 7) (primV 'error))
+(check-equal? (vector-ref test-store 8) (boolV 'true))
+(check-equal? (vector-ref test-store 19) (nullV 'null))
+
+
+;;add-to-store takes a single value and a store and adds the value to the
+;;store at proper spot
+(define (add-to-store [store : Store] [val : Value]): Store
+  (define cur (vector-ref store 0))
+  (cond
+    [(not(< (vector-length store) cur))    (error 'store "ZODE: Invalid Memory")]
+    [else                                  (begin
+                                             (vector-set! store cur val)
+                                             (vector-set! store 0 (+ cur 1)))]))
 
 
 #;(;; GENERAL HELPERS--------------------------------------------------------------
