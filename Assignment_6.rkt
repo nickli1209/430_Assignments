@@ -21,32 +21,39 @@
 (struct strV ([str : String])#:transparent)
 (struct cloV ([params : (Listof Symbol)] [body : ExprC ] [env : Env])#:transparent)
 (struct primV ([s : Symbol])#:transparent)
+(struct nullV ([s : Symbol])#:transparent)
 
 ;;for environments
-(struct Binding ([name : Symbol] [val : Value])#:transparent)
+(struct Binding ([name : Symbol] [loc : Natural])#:transparent)
 (define-type Env (Listof Binding))
+(define-type Store (Mutable-Vectorof Value))
 
 ;;TOP ENVIRONEMNT--------------------------------------------------------------
 ;;holds all primative type valid in any environment, regardless of locals
 ;;or lamb params
-(define top-env (list (Binding '+ (primV '+))
-                      (Binding '- (primV '-))
-                      (Binding '* (primV '*))
-                      (Binding '/ (primV '/))
-                      (Binding '<= (primV '<=))
-                      (Binding 'equal? (primV 'equal?))
-                      (Binding 'error (primV 'error))
-                      (Binding 'true (boolV 'true))
-                      (Binding 'false (boolV 'false))
-                      (Binding 'println (primV 'println))
-                      (Binding 'read-num (primV 'read-num))
-                      (Binding 'read-str (primV 'read-str))
-                      (Binding 'seq (primV 'seq))
-                      (Binding '++ (primV '++))
-                      (Binding 'printint (primV 'printint))))
+(define top-env (list (Binding '+ 1)
+                      (Binding '- 2)
+                      (Binding '* 3)
+                      (Binding '/ 4)
+                      (Binding '<= 5)
+                      (Binding 'equal? 6)
+                      (Binding 'error 7)
+                      (Binding 'true 8)
+                      (Binding 'false 9)
+                      (Binding 'println 10)
+                      (Binding 'read-num 11)
+                      (Binding 'read-str 12)
+                      (Binding 'seq 13)
+                      (Binding '++ 14)
+                      (Binding 'printint 15)
+                      (Binding 'make-array 16)
+                      (Binding 'array 17)
+                      (Binding 'aref 18)
+                      (Binding 'aset! 19)
+                      (Binding 'substring 20)
+                      (Binding 'null 21)))
 
-
-;;PARSING-------------------------------------------------------------------
+#;(;;PARSING-------------------------------------------------------------------
 ;;Main Parse, input sexp, outputs exprC representing AST
 (define (parse [exp : Sexp]) : ExprC
   (match exp
@@ -105,7 +112,7 @@
 ;;INTERP EXPRESSIONS (main Interp),input is exp as an ExprC,and env starting with top-env,
 ;;outputs a value...
 
-(define (interp [exp : ExprC] [env : Env]): Value
+(define (interp [exp : ExprC] [env : Env] [store : Store ]): Value
   (match exp
     [(numC n)                   (numV n)]
     [(strC str)                 (strV str)]
@@ -143,7 +150,8 @@
                               [(equal? b 'false)  "false"]
                               [else     (error 'serialize "Invalid boolean value ~e" b)])]
     [(cloV params body env)  "#<procedure>"]
-    [(primV s)               "#<primop>"]))
+    [(primV s)               "#<primop>"]
+    [(nullV n)            ("null")]))
 
 
 
@@ -151,23 +159,48 @@
 ;;takes as input a sexp, calls parse, then interp, then serialize, returns string
 ;;representing the result of the code
 (define (top-interp [s : Sexp]) : String
-  (serialize (interp (parse s) top-env)))
-
+  (serialize (interp (parse s) top-env )))
+)
 
 ;;ENVIRONMENT STUFF:------------------------------------------------------
 ;;!!!edit this functionality to handle checl to top-env if not in current env
 ;;!!!that way wont need a cond everywhere we lookup to check both env's
 ;;lookup takes as input a symbol representing an idC, and checks the passed
 ;;environment env for its value, returning a number as of now...
-  (define (lookup [for : Symbol] [env : Env]) : Value
+  (define (lookup [for : Symbol] [env : Env] [store : Store]) : Value
     (match env
       ['() (error 'lookup "ZODE: name not found: ~e" for)]
-      [(cons (Binding name val) r) (cond
-                    [(symbol=? for name) val]
-                    [else (lookup for r)])]))
+      [(cons (Binding name loc) r) (cond
+                    [(symbol=? for name) (vector-ref store loc)]
+                    [else (lookup for r store)])]))
+
+;;init store could take as input the top environment, and initailizes an array
+;;of size 100, could paramatrize later and add top-env param later
+(define (init-store [top-env : Env]): Store
+  (define store (make-vector 100))
+  (vector-set! store 0 (numV 1)))
+  
+
+(define (init-store-helper [top-env : Env] [store : Store]): Store
+  (match top-env
+    ['()                               (cast store Store)]
+    [(cons (Binding n l ) rst)         (begin (cond
+                                                [(equal? n 'true)       (vector-set! store l (boolV 'true))]
+                                                [(equal? n 'false)      (vector-set! store l (boolV 'false))]
+                                                [(equal? n 'null)       (vector-set! store l (nullV 'null))]
+                                                [else                        (vector-set! store l (primV n))])
+                                              (vector-set! store 0 (numV (+ (numV-n (vector-ref store 0)) 1)))
+                                              (init-store-helper rst store))]))
+
+;;test init-store
+(define test-store (init-store (list (Binding '+ 1) (Binding 'true 8) (Binding 'false 9) (Binding 'null 21))))
+(check-equal? (vector-ref test-store 0) (primV '+))
+(check-equal? (vector-ref test-store 7) (boolV 'true))
+(check-equal? (vector-ref test-store 8) (boolV 'false))
+(check-equal? (vector-ref test-store 20) (nullV 'null))
 
 
-;; GENERAL HELPERS--------------------------------------------------------------
+#;(;; GENERAL HELPERS--------------------------------------------------------------
 
 ;;has-dups? takes a list of symbols, returns true if there are duplicates in the list
 ;;false otherwise
@@ -188,6 +221,7 @@
       (equal? sym 'locals)
       (equal? sym ':)
       (equal? sym '=)
+      (equal? sym ':=)
       )))
 
 ;;EXTEND_ENV---------------------------------------------
@@ -347,10 +381,10 @@
                               [(equal? b 'false)  "false"]
                               [else     (error 'serialize2 "Invalid boolean value ~e" b)])]
     [(cloV params body env)  "#<procedure>"]
-    [(primV s)               "#<primop>"]))
+    [(primV s)               "#<primop>"])))
 
 
-;;TESTCASES---------------------------------------------------------------------
+#;(;;TESTCASES---------------------------------------------------------------------
 ;;------------------------------------------------------------------------------
 
 
@@ -604,7 +638,7 @@
 (check-equal? (apply-prims 'equal? (list (numV 1) (numV 1))) (boolV 'true))
 (check-exn
  #px"ZODE: 'h is not a valid operator"
- (λ () (apply-prims 'h (list (numV 1) (numV 2)))))
+ (λ () (apply-prims 'h (list (numV 1) (numV 2))))))
 
 
 
