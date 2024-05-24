@@ -6,13 +6,15 @@
 
 ;;TYPES AND STRUCTS---------------------------------------------------------
 ;;for expressions AST
-(define-type ExprC (U numC idC lambC appC strC ifC))
+(define-type ExprC (U numC idC lambC appC strC ifC mutC))
 (struct numC ([n : Real])#:transparent)
 (struct idC ([name : Symbol])#:transparent)
 (struct lambC ([id : (Listof Symbol)] [body : ExprC]) #:transparent)
 (struct strC ([str : String])#:transparent)
 (struct appC([f : ExprC] [args : (Listof ExprC)])#:transparent)
-(struct ifC ([test : ExprC] [then : ExprC] [else : ExprC])#:transparent) 
+(struct ifC ([test : ExprC] [then : ExprC] [else : ExprC])#:transparent)
+;;new AST for muations
+(struct mutC ([id : Symbol] [val : ExprC]) #:transparent)
 
 ;;for values
 (define-type Value(U numV boolV strV cloV primV nullV))
@@ -22,6 +24,7 @@
 (struct cloV ([params : (Listof Symbol)] [body : ExprC ] [env : Env])#:transparent)
 (struct primV ([s : Symbol])#:transparent)
 (struct nullV ([s : Symbol])#:transparent)
+(struct arrayV ([loc : Natural] [size : Natural])#:transparent)
 
 ;;for environments
 (struct Binding ([name : Symbol] [loc : Natural])#:transparent)
@@ -41,19 +44,17 @@
                       (Binding 'true 8)
                       (Binding 'false 9)
                       (Binding 'println 10)
-                      (Binding 'read-num 11)
-                      (Binding 'read-str 12)
-                      (Binding 'seq 13)
-                      (Binding '++ 14)
-                      (Binding 'printint 15)
-                      (Binding 'make-array 16)
-                      (Binding 'array 17)
-                      (Binding 'aref 18)
-                      (Binding 'aset! 19)
-                      (Binding 'substring 20)
-                      (Binding 'null 21)))
+                      (Binding 'seq 11)
+                      (Binding '++ 12)
+                      (Binding 'printint 13)
+                      (Binding 'make-array 14)
+                      (Binding 'array 15)
+                      (Binding 'aref 16)
+                      (Binding 'aset! 17)
+                      (Binding 'substring 18)
+                      (Binding 'null 19)))
 
-#;(;;PARSING-------------------------------------------------------------------
+;;PARSING-------------------------------------------------------------------
 ;;Main Parse, input sexp, outputs exprC representing AST
 (define (parse [exp : Sexp]) : ExprC
   (match exp
@@ -62,6 +63,8 @@
                                     [(allowed? name)       (idC name)]
                                     [else (error 'parse "ZODE: invalid symbol for an id")])] 
     [(? string? str)              (strC str)]
+    ;;new match clause for mutations
+    [(list (? symbol? id) ':= val)    (mutC id (parse val))]
     [(list 'if ': check ': then ': else)     (ifC (parse check) (parse then) (parse else))]
     [(list 'lamb ': params ... ': body)         (define syms (filter symbol? params))
                                                  (if(equal? (length syms) (length params))
@@ -108,7 +111,7 @@
     [(list _ '= val ': more-clauses ...)            (cons (parse val) (parse-clause-vals more-clauses))]))
 
  
-;;INTERPING----------------------------------------------------------------
+#;(;;INTERPING----------------------------------------------------------------
 ;;INTERP EXPRESSIONS (main Interp),input is exp as an ExprC,and env starting with top-env,
 ;;outputs a value...
 
@@ -200,26 +203,29 @@
   (vector-set! store 19 (nullV 'null))
   (cast store Store))
 
-;;test init-store
-(define test-store (init-store))
-(check-equal? (vector-ref test-store 0) (numV 20))
-(check-equal? (vector-ref test-store 7) (primV 'error))
-(check-equal? (vector-ref test-store 8) (boolV 'true))
-(check-equal? (vector-ref test-store 19) (nullV 'null))
-
-
 ;;add-to-store takes a single value and a store and adds the value to the
 ;;store at proper spot
-(define (add-to-store [store : Store] [val : Value]): Store
-  (define cur (vector-ref store 0))
-  (cond
-    [(not(< (vector-length store) cur))    (error 'store "ZODE: Invalid Memory")]
-    [else                                  (begin
-                                             (vector-set! store cur val)
-                                             (vector-set! store 0 (+ cur 1)))]))
+(define (add-to-store [store : Store] [val : Value]) : Natural
+  (define cur (get-numV store 0))
+  (if (>= cur (vector-length store))
+      (error 'store "ZODE: Out of memory")
+      (begin
+        (vector-set! store cur val)
+        (vector-set! store 0 (numV (+ cur 1)))
+        cur)))
+;;test add-to-store ;;to do next, drew start  here i got add-to-store working
 
 
-#;(;; GENERAL HELPERS--------------------------------------------------------------
+
+;;allocate allocates space in the 
+
+
+;; GENERAL HELPERS--------------------------------------------------------------
+;;gets the num of counter from a numV in store without casting
+(define (get-numV [store : Store] [ind : Natural]) : Natural
+  (match (vector-ref store ind)
+    [(numV (? natural? n)) n]
+    [else (error 'get-numV"ZODE: Expected numV at location ~a in memory" ind)]))
 
 ;;has-dups? takes a list of symbols, returns true if there are duplicates in the list
 ;;false otherwise
@@ -243,7 +249,7 @@
       (equal? sym ':=)
       )))
 
-;;EXTEND_ENV---------------------------------------------
+#;(;;EXTEND_ENV---------------------------------------------
 ;;extend-env takes as input a list of params, a list of args cooresponding
 ;;to the params, and a current environment
 (define (extend-env [params : (Listof Symbol)] [args : (Listof Value)] [org-env : Env]): Env
@@ -659,5 +665,17 @@
  #px"ZODE: 'h is not a valid operator"
  (λ () (apply-prims 'h (list (numV 1) (numV 2))))))
 
+;;STORE TESTS--------------------------------------------------------------------------
+;;test init-store
+(define test-store (init-store))
+(check-equal? (vector-ref test-store 0) (numV 20))
+(check-equal? (vector-ref test-store 7) (primV 'error))
+(check-equal? (vector-ref test-store 8) (boolV 'true))
+(check-equal? (vector-ref test-store 19) (nullV 'null))
 
+;;test get-numV
+(check-equal? (get-numV test-store 0) 20)
+(check-exn
+ #px"ZODE: Expected numV at location 1"
+ (λ()(get-numV test-store 1)))
 
