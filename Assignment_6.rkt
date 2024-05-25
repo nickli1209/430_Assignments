@@ -1,8 +1,8 @@
 #lang typed/racket
 (require typed/rackunit)
-;;ASSIGNMENT 4, NICK LI DREW KIM
-;;Should be fully implemented, ironing out kinks,
-;;and syntax differences... 2 tests failed.. 
+;;ASSIGNMENT 6, NICK LI DREW KIM
+;;Should be mostly implemented, ironing out kinks,while and in-order blank
+;;3 tests failing
 
 ;;TYPES AND STRUCTS---------------------------------------------------------
 ;;for expressions AST
