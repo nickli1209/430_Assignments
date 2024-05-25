@@ -301,6 +301,20 @@
             (boolV 'false))) 
       (error 'interp "ZODE: expects exactly two operands")))
 
+;;prim-substring
+;;substring takes a string and a start and endinf index and returns the
+;;cooresponding substring
+(define (prim-substring [args : (Listof Value)]): strV
+  (match args
+    [(list (strV str) (numV (? exact-integer? s)) (numV (? exact-integer? e))) (strV (substring str s e))]
+    [else (error 'interp"ZODE: substring must take three arguement, string, int, int")]))
+
+;;test prim-substring
+(check-equal? (prim-substring (list (strV "hello") (numV 1) (numV 3))) (strV "el"))
+(check-exn
+ #px"ZODE: substring"
+ (λ()(prim-substring (list (strV "hello") (numV 10)))))
+
 
 ;;apply-prims, takes as input a Symbol op, and a list of values args
 ;;applys the appropriate primative operation and returns a Value

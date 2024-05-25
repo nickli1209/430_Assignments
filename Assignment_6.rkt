@@ -364,7 +364,7 @@
     [else (error 'interp"ZODE: substring must take three arguement, string, int, int")]))
 
 ;;test prim-substring
-(check-equal? (prim-substring (list (strV "hello") (numV 1) (numV 3))) (strV "ell"))
+(check-equal? (prim-substring (list (strV "hello") (numV 1) (numV 3))) (strV "el"))
 (check-exn
  #px"ZODE: substring"
  (λ()(prim-substring (list (strV "hello") (numV 10)))))
@@ -409,9 +409,28 @@
     [(cloV params body env)  "#<procedure>"]
     [(primV s)               "#<primop>"]))
 
-
-#;(;;TESTCASES---------------------------------------------------------------------
+;;TESTCASES---------------------------------------------------------------------
 ;;------------------------------------------------------------------------------
+;;STORE TESTS--------------------------------------------------------------------------
+;;test init-store
+;;global test store for all tests
+(define test-store (init-store))
+(check-equal? (vector-ref test-store 0) (numV 20))
+(check-equal? (vector-ref test-store 7) (primV 'error))
+(check-equal? (vector-ref test-store 8) (boolV 'true))
+(check-equal? (vector-ref test-store 19) (nullV 'null))
+
+;;test get-numV
+(check-equal? (get-numV test-store 0) 20)
+(check-exn
+ #px"ZODE: Expected numV at location 1"
+ (λ()(get-numV test-store 1)))
+
+;;test add-to-store ;;to do next, drew start  here i got add-to-store working
+(add-to-store test-store (numV 1))
+(check-equal? (vector-ref test-store 0) (numV 21))
+(check-equal? (vector-ref test-store 20) (numV 1))
+
 
 
 ;;PARSE_TESTS-------------------------------------------------------------------
@@ -481,20 +500,21 @@
 
 ;;TEST INTERP-------------------------------------------------------------------
 
-(check-equal? (interp (numC 10) '()) (numV 10))
-(check-equal? (interp (strC "hello world") '()) (strV "hello world"))
-(check-equal? (interp (idC 'x) (list (Binding 'x (numV 10)))) (numV 10))
+(check-equal? (interp (numC 10) '() test-store) (numV 10))
+(check-equal? (interp (strC "hello world") '() test-store) (strV "hello world"))
+(check-equal? (interp (idC 'x) (list (Binding 'x (add-to-store test-store (numV 10)))) test-store) (numV 10))
 (check-exn ;;tests lookup on variable not bound in env
  #px"ZODE: name not found"
- (λ () (interp (idC 'y) (list (Binding 'x (numV 10))))))
-;;test if
-(check-equal? (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (boolV 'true)))) (numV 1))
-(check-equal? (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (boolV 'false)))) (numV 0))
+ (λ () (interp (idC 'y) (list (Binding 'x (add-to-store test-store (numV 10)))) test-store)))
+;;test if (8 in store is true, 9 is false
+(check-equal? (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x 8)) test-store) (numV 1))
+(check-equal? (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x 9)) test-store) (numV 0))
+
 (check-exn
  #px"ZODE: if condition not a boolean"
- (λ () (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (numV 10))))))
+   (λ () (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (add-to-store test-store (numV 10)))) test-store)))
 ;;test lamb
-(check-equal? (interp (lambC (list 'x 'y 'z) (numC 10)) '()) (cloV (list 'x 'y 'z) (numC 10) '()))
+(check-equal? (interp (lambC (list 'x 'y 'z) (numC 10)) '() test-store) (cloV (list 'x 'y 'z) (numC 10) '()))
 
 ;;TEST SERIALIZE
 (check-equal? (serialize (numV 10)) "10")
@@ -566,14 +586,13 @@
 ;;test has-dups?
 (check-equal? (has-dups? (list 'a 'b 'c 'd)) #f)
 (check-equal? (has-dups? (list 'a 'b 'c 'c)) #t)
-
 ;;test extend-env, flipped order, to allow for prim ops as variables
-(check-equal? (extend-env (list 'x 'y 'z) (list (numV 1) (numV 2) (numV 3)) (list (Binding 'a (numV 10))))
+(check-equal? (extend-env (list 'x 'y 'z) (list (numV 1) (numV 2) (numV 3)) (list (Binding 'a (add-to-store test-store (numV 10)))) test-store)
               (list
-               (Binding 'x (numV 1))
-               (Binding 'y (numV 2))
-               (Binding 'z (numV 3))
-               (Binding 'a (numV 10))))
+               (Binding 'x 25)
+               (Binding 'y 26)
+               (Binding 'z 27)
+               (Binding 'a 24)))
 
 ;;test prim+-----------------------------------------
 (check-equal? (prim+ (list (numV 1) (numV 2))) (numV 3))
@@ -664,24 +683,5 @@
 (check-equal? (apply-prims 'equal? (list (numV 1) (numV 1))) (boolV 'true))
 (check-exn
  #px"ZODE: 'h is not a valid operator"
- (λ () (apply-prims 'h (list (numV 1) (numV 2))))))
+ (λ () (apply-prims 'h (list (numV 1) (numV 2)))))
 
-;;STORE TESTS--------------------------------------------------------------------------
-;;test init-store
-;;global test store for all tests
-(define test-store (init-store))
-(check-equal? (vector-ref test-store 0) (numV 20))
-(check-equal? (vector-ref test-store 7) (primV 'error))
-(check-equal? (vector-ref test-store 8) (boolV 'true))
-(check-equal? (vector-ref test-store 19) (nullV 'null))
-
-;;test get-numV
-(check-equal? (get-numV test-store 0) 20)
-(check-exn
- #px"ZODE: Expected numV at location 1"
- (λ()(get-numV test-store 1)))
-
-;;test add-to-store ;;to do next, drew start  here i got add-to-store working
-(add-to-store test-store (numV 1))
-(check-equal? (vector-ref test-store 0) (numV 21))
-(check-equal? (vector-ref test-store 20) (numV 1))
