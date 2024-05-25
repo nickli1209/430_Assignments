@@ -161,8 +161,8 @@
 ;;TOP-INTERP---------------------------------------------------------------
 ;;takes as input a sexp, calls parse, then interp, then serialize, returns string
 ;;representing the result of the code
-(define (top-interp [s : Sexp]) : String
-  (serialize (interp (parse s) top-env (init-store))))
+(define (top-interp [s : Sexp] [size : Natural]) : String
+  (serialize (interp (parse s) top-env (init-store size))))
 
 ;;ENVIRONMENT STUFF:------------------------------------------------------
 ;;!!!edit this functionality to handle checl to top-env if not in current env
@@ -178,8 +178,8 @@
 
 ;;init store could take as input the top environment, and initailizes an array
 ;;of size 100, could paramatrize later and add top-env param later
-(define (init-store) : Store
-  (define store (make-vector 100)) 
+(define (init-store [size : Natural]) : Store
+  (define store (make-vector size)) 
   (vector-set! store 0 (numV 20))
   (vector-set! store 1 (primV '+))
   (vector-set! store 2 (primV '-))
@@ -414,7 +414,7 @@
 ;;STORE TESTS--------------------------------------------------------------------------
 ;;test init-store
 ;;global test store for all tests
-(define test-store (init-store))
+(define test-store (init-store 100))
 (check-equal? (vector-ref test-store 0) (numV 20))
 (check-equal? (vector-ref test-store 7) (primV 'error))
 (check-equal? (vector-ref test-store 8) (boolV 'true))
@@ -440,6 +440,7 @@
                                                     (lambC (list 'y) (appC (idC '-) (list (idC 'y) (numC 1))))))))
 (check-equal? (parse '{/ f g} ) (appC (idC '/) (list (idC 'f) (idC 'g))))
 (check-equal? (parse "test") (strC "test"))
+(check-equal? (parse '{ x := 10}) (mutC 'x (numC 10)))
 (check-exn
  #px"ZODE: invalid symbol for an id"
  (λ () (parse 'if)))
@@ -523,6 +524,7 @@
 (check-equal? (serialize (strV "hello world")) "\"hello world\"")
 (check-equal? (serialize (boolV 'true)) "true")
 (check-equal? (serialize (boolV 'false)) "false")
+(check-equal? (serialize (nullV 'null)) "null")
 (check-exn ;;tests not a bolean
  #px"Invalid boolean value 'notabool"
  (λ () (serialize (boolV 'notabool))))
@@ -539,47 +541,47 @@
  (λ () (serialize2 (boolV 'notabool))))
 
 ;;TEST TOP-INTERP---------------------------------------------------------------
-(check-equal? (top-interp "hello world") "\"hello world\"")
-(check-equal? (top-interp 10) "10")
-(check-equal? (top-interp 'true) "true")
-(check-equal? (top-interp '{<= 9 10}) "true")
-(check-equal? (top-interp '{if : {equal? "nick" "nick"} : {/ 10 2} : {- 10 4}}) "5")
-(check-equal? (top-interp '{if : {equal? "nick" "nick"} : {/ 10 2} : {- 10 4}}) "5")
-(check-equal? (top-interp '{if : {equal? "nick" "drew"} : {/ 10 2} : {- 10 4}}) "6")
+(check-equal? (top-interp "hello world" 100) "\"hello world\"")
+(check-equal? (top-interp 10 100) "10")
+(check-equal? (top-interp 'true 100) "true")
+(check-equal? (top-interp '{<= 9 10} 100) "true")
+(check-equal? (top-interp '{if : {equal? "nick" "nick"} : {/ 10 2} : {- 10 4}} 100) "5")
+(check-equal? (top-interp '{if : {equal? "nick" "nick"} : {/ 10 2} : {- 10 4}} 100) "5")
+(check-equal? (top-interp '{if : {equal? "nick" "drew"} : {/ 10 2} : {- 10 4}} 100) "6")
 (check-exn
  #px"ZODE: expects exactly two operands"
- (λ () (top-interp '{<= 10 20 30})))
+ (λ () (top-interp '{<= 10 20 30} 100)))
 (check-exn
  #px"ZODE: user-error \"NOT GOOD\""
- (λ () (top-interp '{error "NOT GOOD"})))
-(check-equal? (top-interp '{{lamb : x y : {+ x y}} 5 6}) "11")
+ (λ () (top-interp '{error "NOT GOOD"} 100)))
+(check-equal? (top-interp '{{lamb : x y : {+ x y}} 5 6} 100) "11")
 (check-exn
  #px"ZODE : Invalid number of arguments in function call"
- (λ () (top-interp '{{lamb : x y : {+ x y}} 5 6 7})))
+ (λ () (top-interp '{{lamb : x y : {+ x y}} 5 6 7} 100)))
 ;;not valid application test
 (check-exn
  #px"ZODE: 7 is not a valid application"
- (λ () (top-interp '{7 8 9})))
+ (λ () (top-interp '{7 8 9} 100)))
 ;;test locals
 (check-equal? (top-interp '{locals : f = {lamb : x y : {+ {* y y} {* x x}}}
                                    : g = {+ 5 6}
-                                   :{f g 1}}) "122")
+                                   :{f g 1}} 100) "122")
 ;;check divide by zero
 (check-exn
  #px"ZODE:Divide by zero undefined"
- (λ() (top-interp '{/ 10 0})))
+ (λ() (top-interp '{/ 10 0} 100)))
 
 ;;+ as param, fails...why?
-(check-equal? (top-interp '{{lamb : / : {* / /}} 5}) "25")
+(check-equal? (top-interp '{{lamb : / : {* / /}} 5} 100) "25")
 
 ;;test println
-(check-equal? (top-interp '{println "hello"}) "true")
+(check-equal? (top-interp '{println "hello"} 100) "true")
 
 ;;tets printint
-(check-equal? (top-interp '{printint 10}) "true")
+(check-equal? (top-interp '{printint 10} 100) "true")
 
 ;;test seq
-(check-equal? (top-interp '{seq {+ 10 20} {println "HELLO"} {+ 10 5}}) "15")
+(check-equal? (top-interp '{seq {+ 10 20} {println "HELLO"} {+ 10 5}} 100) "15")
 
 ;;HELPER TESTS------------------------------------------------------------------
 
@@ -587,7 +589,10 @@
 (check-equal? (has-dups? (list 'a 'b 'c 'd)) #f)
 (check-equal? (has-dups? (list 'a 'b 'c 'c)) #t)
 ;;test extend-env, flipped order, to allow for prim ops as variables
-(check-equal? (extend-env (list 'x 'y 'z) (list (numV 1) (numV 2) (numV 3)) (list (Binding 'a (add-to-store test-store (numV 10)))) test-store)
+(check-equal? (extend-env (list 'x 'y 'z)
+                          (list (numV 1) (numV 2) (numV 3))
+                          (list (Binding 'a (add-to-store test-store (numV 10))))
+                          test-store)
               (list
                (Binding 'x 25)
                (Binding 'y 26)
@@ -685,3 +690,15 @@
  #px"ZODE: 'h is not a valid operator"
  (λ () (apply-prims 'h (list (numV 1) (numV 2)))))
 
+
+;;test allocate
+(define temp (allocate test-store (list (numV 1)(numV 2)(numV 3))))
+(check-equal? (vector-ref test-store temp) (numV 1))
+(check-equal? (vector-ref test-store (+ 1 temp)) (numV 2))
+(check-equal? (vector-ref test-store (+ 2 temp)) (numV 3))
+
+;;test add-to-store error
+(define error-store (init-store 22))
+(check-exn
+ #px"ZODE: Out of memory"
+ (λ()(allocate error-store (list (numV 1) (numV 1) (numV 1) (numV 1) (numV 1)))))
