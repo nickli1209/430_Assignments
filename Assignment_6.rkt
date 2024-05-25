@@ -120,6 +120,9 @@
     [(numC n)                   (numV n)]
     [(strC str)                  (strV str)]
     [(idC id)                   (lookup id env store)]
+    [(mutC id val)              (begin
+                                  (vector-set! store (lookup-loc id env store) (interp val env store))
+                                  (nullV 'null))]
     [(ifC check then else) (cond
                              [(equal? (interp check env store) (boolV 'true))   (interp then env store)]
                              [(equal? (interp check env store) (boolV 'false))  (interp else env store)]
@@ -154,7 +157,8 @@
                               [else     (error 'serialize "Invalid boolean value ~e" b)])]
     [(cloV params body env)  "#<procedure>"]
     [(primV s)               "#<primop>"]
-    [(nullV n)            "null"]))
+    [(nullV n)            "null"]
+    [(arrayV l s)          "#<array>"]))
 
 
 
@@ -163,6 +167,10 @@
 ;;representing the result of the code
 (define (top-interp [s : Sexp] [size : Natural]) : String
   (serialize (interp (parse s) top-env (init-store size))))
+
+(define while '{})
+
+(define in-order '{})
 
 ;;ENVIRONMENT STUFF:------------------------------------------------------
 ;;!!!edit this functionality to handle checl to top-env if not in current env
@@ -175,6 +183,14 @@
       [(cons (Binding name loc) r) (cond
                     [(symbol=? for name) (vector-ref store loc)]
                     [else (lookup for r store)])]))
+
+;;lookup-loc helper for muations, grabs the location in store a id points to
+  (define (lookup-loc [for : Symbol] [env : Env] [store : Store]) : Natural
+    (match env
+      ['() (error 'lookup "ZODE: name not found: ~e" for)]
+      [(cons (Binding name loc) r) (cond
+                    [(symbol=? for name) loc]
+                    [else (lookup-loc for r store)])]))
 
 ;;init store could take as input the top environment, and initailizes an array
 ;;of size 100, could paramatrize later and add top-env param later
@@ -367,11 +383,35 @@
 
 
 ;;prim-array
+(define (prim-array [args : (Listof Value)] [store : Store]): Value
+  (arrayV (allocate store args) (length args)))
 
 ;;prim-aref
+(define (prim-aref [args : (Listof Value)] [store : Store]): Value
+  (if (equal? (length args) 2)
+      (let ([arr    (first args)]
+            [idx     (second args)])
+        (if (and (arrayV? arr) (numV? idx) (natural? (numV-n idx)))
+            (if (< (numV-n idx) (arrayV-size arr))
+                (vector-ref store (+ (arrayV-loc arr) (numV-n idx)))
+                (error'interp "ZODE: index out of bounds error from aref"))
+            (error 'interp "ZODE: Invalid types to aref ~a or ~a" (serialize arr) (serialize idx))))
+      (error 'interp "ZODE: aref must take two arguments")))
 
 ;;prim-aset!
-
+(define (prim-aset! [args : (Listof Value)] [store : Store]): Value
+  (if (equal? (length args) 3)
+      (let ([arr    (first args)]
+            [idx     (second args)]
+            [val     (third args)])
+        (if (and (arrayV? arr) (numV? idx) (natural? (numV-n idx)))
+            (if (< (numV-n idx) (arrayV-size arr))
+                (begin
+                  (vector-set! store (+ (arrayV-loc arr) (numV-n idx)) val)
+                  (nullV 'null))
+                (error'interp "ZODE: index out of bounds error from aset!"))
+            (error 'interp "ZODE: Invalid types to aset! ~a or ~a" (serialize arr) (serialize idx))))
+      (error 'interp "ZODE: aset! must take three arguments")))
 
 ;;prim-substring
 ;;substring takes a string and a start and endinf index and returns the
@@ -397,6 +437,9 @@
     ['printint   (prim-printint args)]
     ['substring  (prim-substring args)]
     ['make-array  (prim-make-array args store)]
+    ['array       (prim-array args store)]
+    ['aref        (prim-aref args store)]
+    ['aset!       (prim-aset! args store)]
     [else         (error 'interp"ZODE: ~e is not a valid operator" op)])
   )
 
@@ -530,6 +573,12 @@
 ;;test lamb
 (check-equal? (interp (lambC (list 'x 'y 'z) (numC 10)) '() test-store) (cloV (list 'x 'y 'z) (numC 10) '()))
 
+;;test rebind interp
+(define test-store-bind(init-store 25))
+(add-to-store test-store-bind (numV 11))
+(check-equal? (interp (mutC 'test (numC 12)) (list (Binding 'test 20)) test-store-bind) (nullV 'null))
+(check-equal? (vector-ref test-store-bind 20) (numV 12))
+
 ;;TEST SERIALIZE
 (check-equal? (serialize (numV 10)) "10")
 (check-equal? (serialize (cloV (list 'x 'y 'z) (appC (idC '+) (list (idC 'x) (numC 10))) '()))"#<procedure>")
@@ -538,6 +587,7 @@
 (check-equal? (serialize (boolV 'true)) "true")
 (check-equal? (serialize (boolV 'false)) "false")
 (check-equal? (serialize (nullV 'null)) "null")
+(check-equal? (serialize (arrayV 22 20)) "#<array>")
 (check-exn ;;tests not a bolean
  #px"Invalid boolean value 'notabool"
  (λ () (serialize (boolV 'notabool))))
@@ -595,6 +645,53 @@
 
 ;;test seq
 (check-equal? (top-interp '{seq {+ 10 20} {println "HELLO"} {+ 10 5}} 100) "15")
+
+;;test substring
+(check-equal? (top-interp '{substring "apple" 1 3} 100) "\"pp\"")
+
+;;test lookup-loc error (rebind not exist)
+(check-exn
+ #px"ZODE: name not found: 'y"
+ (λ()(top-interp '{locals : array = {make-array 10 0}
+                                   : array2 = {array 1 2 "apple" 4}
+                                   : x = 10
+                                   : {seq {aset! array2 1 7}
+                                         {+ {aref array2 1} 1}
+                                         {aset! array2 2 "banana"}
+                                         {y := 11}
+                                          x}} 100)))
+
+;;test make-array, array, aref aset!
+(check-equal? (top-interp '{locals : array = {make-array 10 0}
+                                   : array2 = {array 1 2 "apple" 4}
+                                   : {seq {aset! array2 1 7}
+                                         {+ {aref array2 1} 1}}} 100)
+              "8")
+
+(check-equal? (top-interp '{locals : array = {make-array 10 0}
+                                   : array2 = {array 1 2 "apple" 4}
+                                   : x = 10
+                                   : {seq {aset! array2 1 7}
+                                         {+ {aref array2 1} 1}
+                                         {aset! array2 2 "banana"}
+                                         {aref array2 2}}} 100)
+              "\"banana\"")
+
+(check-equal? (top-interp '{locals : array = {make-array 10 0}
+                                   : array2 = {array 1 2 "apple" 4}
+                                   : x = 10
+                                   : {seq {aset! array2 1 7}
+                                         {+ {aref array2 1} 1}
+                                         {aset! array2 2 "banana"}
+                                         {x := 11}
+                                          x}} 100)"11")
+
+;;test while loop example from spec
+#;(check-equal? (top-interp '{locals : fact = "bogus"
+                                   : {seq {fact := {lamb : x : {if : {= x 0}
+                                                                   : 1
+                                                                   : {* x {fact {- x 1}}}}}}
+                                          {fact 5}}} 100) "120")
 
 ;;HELPER TESTS------------------------------------------------------------------
 
@@ -714,16 +811,48 @@
  #px"make-array must take two args"
  (λ()(prim-make-array (list (strV "nick")) test-store)))
 
+(check-equal? (prim-aref (list (arrayV 28 3) (numV 1)) test-store) (numV 0))
+(check-exn
+ #px"ZODE: Invalid types to aref \"nick\" or 2"
+(λ()(prim-aref (list (strV "nick") (numV 2)) test-store)))
+(check-exn
+ #px"ZODE: aref must take two arguments"
+(λ()(prim-aref (list (strV "nick")) test-store)))
+(check-exn
+ #px"ZODE: index out of bounds error from aref"
+(λ()(prim-aref (list (arrayV 28 3) (numV 3)) test-store)))
+
+
+;;test prim-array-may need to do more error handling in prim-array
+(check-equal? (prim-array (list (numV 1) (numV 2) (numV 3) (numV 4)) test-store) (arrayV 31 4))
+(check equal? (prim-aref (list (arrayV 31 4) (numV 2)) test-store) (numV 3))
+(check-equal? (vector-ref test-store 33) (numV 3))
+
+;;test aset!
+(check-equal? (prim-aset! (list (arrayV 31 4) (numV 2) (numV 69)) test-store) (nullV 'null))
+(check equal? (prim-aref (list (arrayV 31 4) (numV 2)) test-store) (numV 69))
+(check-equal? (vector-ref test-store 33) (numV 69))
+(check-exn
+ #px"ZODE: index out of bounds error from aset!"
+(λ()(prim-aset! (list (arrayV 28 3) (numV 16) (numV 32)) test-store)))
+(check-exn
+ #px"ZODE: Invalid types to aset! \"nick\" or 16"
+(λ()(prim-aset! (list (strV "nick") (numV 16) (numV 32)) test-store)))
+(check-exn
+ #px"ZODE: aset! must take three arguments"
+(λ()(prim-aset! (list (strV "nick") (numV 16)) test-store)))
+
+
 ;test apply-prims
-(check-equal? (apply-prims '+ (list (numV 1) (numV 2)) test-store) (numV 3))
-(check-equal? (apply-prims '- (list (numV 1) (numV 2))test-store) (numV -1))
-(check-equal? (apply-prims '* (list (numV 1) (numV 2))test-store) (numV 2))
-(check-equal? (apply-prims '/ (list (numV 2) (numV 1))test-store) (numV 2))
-(check-equal? (apply-prims '<= (list (numV 1) (numV 2))test-store) (boolV 'true))
+(check-equal? (apply-prims '+ (list (numV 1) (numV 2)) test-store ) (numV 3))
+(check-equal? (apply-prims '- (list (numV 1) (numV 2))test-store ) (numV -1))
+(check-equal? (apply-prims '* (list (numV 1) (numV 2))test-store ) (numV 2))
+(check-equal? (apply-prims '/ (list (numV 2) (numV 1))test-store ) (numV 2))
+(check-equal? (apply-prims '<= (list (numV 1) (numV 2))test-store ) (boolV 'true))
 (check-equal? (apply-prims 'equal? (list (numV 1) (numV 1))test-store) (boolV 'true))
 (check-exn
  #px"ZODE: 'h is not a valid operator"
- (λ () (apply-prims 'h (list (numV 1) (numV 2))test-store)))
+ (λ () (apply-prims 'h (list (numV 1) (numV 2))test-store )))
 
 
 ;;test allocate
@@ -737,3 +866,5 @@
 (check-exn
  #px"ZODE: Out of memory"
  (λ()(allocate error-store (list (numV 1) (numV 1) (numV 1) (numV 1) (numV 1)))))
+
+;;test 
