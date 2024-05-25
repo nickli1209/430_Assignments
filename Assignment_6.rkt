@@ -17,7 +17,7 @@
 (struct mutC ([id : Symbol] [val : ExprC]) #:transparent)
 
 ;;for values
-(define-type Value(U numV boolV strV cloV primV nullV))
+(define-type Value(U numV boolV strV cloV primV nullV arrayV))
 (struct numV ([n : Real])#:transparent)
 (struct boolV ([b : Symbol])#:transparent)
 (struct strV ([str : String])#:transparent)
@@ -136,7 +136,7 @@
                                                  [(equal? op 'error)    (prim-error args-int)]
                                                  ;;[(equal? op 'println)   (prim-println args-int)]
                                                  ;;need to add case to apply-prims given the op here
-                                                 [else (apply-prims op args-int)])]
+                                                 [else (apply-prims op args-int store)])]
                              [else (error'interp (format "ZODE: ~a is not a valid application"
                                                          (serialize (interp f env store))))])]))
 
@@ -347,13 +347,31 @@
       (error 'interp "ZODE: expects exactly two operands")))
 
 ;;prim-make-array
-;;(define (make-array [size : Real] [init : Real]))
+(define (prim-make-array [args : (Listof Value)] [store : Store]): Value
+  (if (equal? (length args) 2)
+        (let ([size (first args)]
+              [init (second args)])
+          (if (numV? size)
+              (if (natural? (numV-n size))
+                  (arrayV (allocate store (make-list (numV-n size) init)) (numV-n size))
+                  (error 'interp"ZODE: size must be a Natural number"))
+              (error'interp "ZODE: make-array takes a size as first arg")))
+      (error 'interp "make-array must take two args")))
+
+
+;;make list
+(define (make-list [size : Natural] [init : Value]): (Listof Value)
+  (match size
+    [0    '()]
+    [else (cons init (make-list (cast (- size 1) Natural) init))]))
+
 
 ;;prim-array
 
 ;;prim-aref
 
 ;;prim-aset!
+
 
 ;;prim-substring
 ;;substring takes a string and a start and endinf index and returns the
@@ -363,17 +381,10 @@
     [(list (strV str) (numV (? exact-integer? s)) (numV (? exact-integer? e))) (strV (substring str s e))]
     [else (error 'interp"ZODE: substring must take three arguement, string, int, int")]))
 
-;;test prim-substring
-(check-equal? (prim-substring (list (strV "hello") (numV 1) (numV 3))) (strV "el"))
-(check-exn
- #px"ZODE: substring"
- (λ()(prim-substring (list (strV "hello") (numV 10)))))
-
-
 
 ;;apply-prims, takes as input a Symbol op, and a list of values args
 ;;applys the appropriate primative operation and returns a Value
-(define (apply-prims [op : Symbol] [args : (Listof Value)]): Value
+(define (apply-prims [op : Symbol] [args : (Listof Value)] [store : Store]): Value
   (match op
     ['+         (prim+ args)]
     ['*         (prim* args)]
@@ -384,6 +395,8 @@
     ['println    (prim-println args)]
     ['seq        (prim-seq args)]
     ['printint   (prim-printint args)]
+    ['substring  (prim-substring args)]
+    ['make-array  (prim-make-array args store)]
     [else         (error 'interp"ZODE: ~e is not a valid operator" op)])
   )
 
@@ -585,6 +598,9 @@
 
 ;;HELPER TESTS------------------------------------------------------------------
 
+;;test make-list
+(check-equal? (make-list 3 (numV 0)) (list (numV 0) (numV 0) (numV 0)))
+
 ;;test has-dups?
 (check-equal? (has-dups? (list 'a 'b 'c 'd)) #f)
 (check-equal? (has-dups? (list 'a 'b 'c 'c)) #t)
@@ -679,16 +695,35 @@
  #px"ZODE: seq expects at least one arguement"
  (λ()(prim-seq '())))
 
+;;test prim-substring
+(check-equal? (prim-substring (list (strV "hello") (numV 1) (numV 3))) (strV "el"))
+(check-exn
+ #px"ZODE: substring"
+ (λ()(prim-substring (list (strV "hello") (numV 10)))))
+
+;;test prim-make-array
+(serialize (vector-ref test-store 0))
+(check-equal? (prim-make-array (list (numV 3) (numV 0)) test-store) (arrayV 28 3))
+(check-exn
+ #px"ZODE: size must be a Natural number"
+ (λ()(prim-make-array (list (numV 3.5) (numV 0)) test-store)))
+(check-exn
+ #px"ZODE: make-array takes a size as first arg"
+ (λ()(prim-make-array (list (strV "nick") (numV 0)) test-store)))
+(check-exn
+ #px"make-array must take two args"
+ (λ()(prim-make-array (list (strV "nick")) test-store)))
+
 ;test apply-prims
-(check-equal? (apply-prims '+ (list (numV 1) (numV 2))) (numV 3))
-(check-equal? (apply-prims '- (list (numV 1) (numV 2))) (numV -1))
-(check-equal? (apply-prims '* (list (numV 1) (numV 2))) (numV 2))
-(check-equal? (apply-prims '/ (list (numV 2) (numV 1))) (numV 2))
-(check-equal? (apply-prims '<= (list (numV 1) (numV 2))) (boolV 'true))
-(check-equal? (apply-prims 'equal? (list (numV 1) (numV 1))) (boolV 'true))
+(check-equal? (apply-prims '+ (list (numV 1) (numV 2)) test-store) (numV 3))
+(check-equal? (apply-prims '- (list (numV 1) (numV 2))test-store) (numV -1))
+(check-equal? (apply-prims '* (list (numV 1) (numV 2))test-store) (numV 2))
+(check-equal? (apply-prims '/ (list (numV 2) (numV 1))test-store) (numV 2))
+(check-equal? (apply-prims '<= (list (numV 1) (numV 2))test-store) (boolV 'true))
+(check-equal? (apply-prims 'equal? (list (numV 1) (numV 1))test-store) (boolV 'true))
 (check-exn
  #px"ZODE: 'h is not a valid operator"
- (λ () (apply-prims 'h (list (numV 1) (numV 2)))))
+ (λ () (apply-prims 'h (list (numV 1) (numV 2))test-store)))
 
 
 ;;test allocate
