@@ -1,8 +1,8 @@
 #lang typed/racket
 (require typed/rackunit)
-;;ASSIGNMENT 6, NICK LI DREW KIM
-;;Should be mostly implemented, ironing out kinks,while and in-order blank
-;;3 tests failing
+;;ASSIGNMENT 6, 
+;;Should be mostly implemented,while might work and in-order is blank
+;;3 tests currently failing
 
 ;;TYPES AND STRUCTS---------------------------------------------------------
 ;;for expressions AST
@@ -690,17 +690,79 @@
                                                         : {* x {fact {- x 1}}}}}}
                                {fact 5}}} 100) "120")
 
+;;test big failing testcase
+(check-equal? (top-interp '{locals : a = {array 0}
+                                   : {locals : a! = {lamb : expected :
+                                                          {if : {equal? {aref a 0} expected}
+                                                              : {seq
+                                                                 {aset! a 0 {+ 1 {aref a 0}}}
+                                                                 273}
+                                                              : {/ 1 0}}}
+                                             : {+ {a! 0} 1}}} 100)"274")
+(check-exn
+ #px"ZODE:Divide by zero undefined"
+ (λ ()(top-interp '{locals : a = {array 0}
+                                   : {locals : a! = {lamb : expected :
+                                                          {if : {equal? {aref a 0} expected}
+                                                              : {seq
+                                                                 {aset! a 0 {+ 1 {aref a 0}}}
+                                                                 273}
+                                                              : {/ 1 0}}}
+                                             : {+ {a! 1} 0}}} 100)))
 
-;;test WHILE
-(define while '{lamb : guard body
-                 : {if : {equals? guard true}
-                       : {body}
-                       : -1}})
-;; (check-equal? (top-interp while 100) ___)
+;;BIG_TESTCASES------------------------------------------------------------------
+;;test WHILE------------------------------
+(define while '{lamb : guard body :
+                     {locals : while = "bogus"
+                       : {seq
+                          {while := {lamb : guard body :
+                                          {if : {guard}
+                                              : {body}
+                                              : {seq
+                                                 {body}
+                                                 {while {guard} {body}}}}}}
+                          {while {guard} {body}}}}})
+;;hard-coded while function into test case to rule out referencing wrong
+;;still returns the zode error true is not a valid application
+;;so some how is parsing true with params following, ask jones about this...
+#;(check-equal? (top-interp '{locals : x = 5
+                                   : y = 3
+                                   : {seq
+                            {{lamb : gaurd body :
+                                  {locals : while = "bogus"
+                                          : {seq
+                                             {while := {lamb : gaurd body :
+                                                             {if : {equal? body gaurd}
+                                                                 : 0
+                                                                 : {while gaurd {body}}}}}
+                                             {while {gaurd} {body}}}}} {equal? y 3} {if : {<= 1 x}
+                                                                                        : {x := {- x 1}}
+                                                                                        : {y := 4}}}
+                            {y}}} 100) "4")
 
-;;test IN-ORDER
+#;(check-equal? (top-interp '{locals : x = 5
+                                   : y = 3
+                                   : {seq
+                                      {while {equal? y 3} {if : {<= 1 x}
+                                                           : {x := {- x 1}}
+                                                           : {y := 4}}}
+                                      {y}}} 100)"4")
+
+#;(check-equal? (top-interp (list 'locals ': 'x '= 5
+                                   ': 'y '= 3
+                                   ': (list 'seq
+                                      (list while '{equal? y 3} '{if : {<= 1 5}
+                                                           : {x := {- x 1}}
+                                                           : {y := 4}})
+                                      '{y})) 100)"4")
+
+;;test IN-ORDER--------------------------
 (define in-order '{})
+
+
 ;;(check-equal? (top-interp in-order 100) ___)
+
+
 
 ;;HELPER TESTS------------------------------------------------------------------
 
