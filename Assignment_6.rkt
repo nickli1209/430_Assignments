@@ -168,9 +168,6 @@
 (define (top-interp [s : Sexp] [size : Natural]) : String
   (serialize (interp (parse s) top-env (init-store size))))
 
-(define while '{})
-
-(define in-order '{})
 
 ;;ENVIRONMENT STUFF:------------------------------------------------------
 ;;!!!edit this functionality to handle checl to top-env if not in current env
@@ -687,11 +684,23 @@
                                           x}} 100)"11")
 
 ;;test while loop example from spec
-#;(check-equal? (top-interp '{locals : fact = "bogus"
-                                   : {seq {fact := {lamb : x : {if : {= x 0}
-                                                                   : 1
-                                                                   : {* x {fact {- x 1}}}}}}
-                                          {fact 5}}} 100) "120")
+(check-equal? (top-interp '{locals : fact = "bogus"
+                       : {seq  {fact := {lamb : x : {if : {equal? x 0}
+                                                        : 1
+                                                        : {* x {fact {- x 1}}}}}}
+                               {fact 5}}} 100) "120")
+
+
+;;test WHILE
+(define while '{lamb : guard body
+                 : {if : {equals? guard true}
+                       : {body}
+                       : -1}})
+;; (check-equal? (top-interp while 100) ___)
+
+;;test IN-ORDER
+(define in-order '{})
+;;(check-equal? (top-interp in-order 100) ___)
 
 ;;HELPER TESTS------------------------------------------------------------------
 
