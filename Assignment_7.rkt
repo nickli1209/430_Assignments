@@ -7,10 +7,13 @@
 (define-type ExprC (U numC idC lambC appC strC ifC))
 (struct numC ([n : Real])#:transparent)
 (struct idC ([name : Symbol])#:transparent)
-(struct lambC ([id : (Listof Symbol)] [body : ExprC]) #:transparent)
+;;commented out to supress errors for now
+;;(struct lambC ([params : (Listof (Pair Ty Symbol))] [body : ExprC] [return : Ty]) #:transparent)
+(struct lambC ([params : (Listof Symbol)] [body : ExprC]) #:transparent)
 (struct strC ([str : String])#:transparent)
 (struct appC([f : ExprC] [args : (Listof ExprC)])#:transparent)
-(struct ifC ([test : ExprC] [then : ExprC] [else : ExprC])#:transparent) 
+(struct ifC ([test : ExprC] [then : ExprC] [else : ExprC])#:transparent)
+(struct local-recC ([id : Symbol] [lamb-def : ExprC] [body : ExprC]) #:transparent)
 
 ;;for values
 (define-type Value(U numV boolV strV cloV primV))
@@ -24,6 +27,17 @@
 (struct Binding ([name : Symbol] [val : Value])#:transparent)
 (define-type Env (Listof Binding))
 
+;;for types
+(define-type Ty (U numT boolT strT funT))
+(struct numT ()#:transparent)
+(struct boolT ()#:transparent)
+(struct strT ()#:transparent)
+(struct funT ([params : (Listof Ty)] [return : Ty])#:transparent)
+
+(define-type TEnv (Listof TBinding))
+(struct TBinding ([name : Symbol] [type : Ty])#:transparent)
+
+;**need to impliment num-eq? , str-eq? , substring
 ;;TOP ENVIRONEMNT--------------------------------------------------------------
 ;;holds all primative type valid in any environment, regardless of locals
 ;;or lamb params
@@ -36,13 +50,23 @@
                       (Binding 'error (primV 'error))
                       (Binding 'true (boolV 'true))
                       (Binding 'false (boolV 'false))
-                      (Binding 'println (primV 'println))
-                      (Binding 'read-num (primV 'read-num))
-                      (Binding 'read-str (primV 'read-str))
-                      (Binding 'seq (primV 'seq))
-                      (Binding '++ (primV '++))
-                      (Binding 'printint (primV 'printint))))
-
+                      (Binding 'num-eq? (primV 'num-eq?))
+                      (Binding 'str-eq? (primV 'str-eq?))
+                      (Binding 'substring (primV 'substring))))
+;;base type environment, holds the type requirements for the primV's
+(define base-tenv (list (TBinding '+ (funT (list (numT) (numT)) (numT)))
+                        (TBinding '- (funT (list (numT) (numT)) (numT)))
+                        (TBinding '* (funT (list (numT) (numT)) (numT)))
+                        (TBinding '/ (funT (list (numT) (numT)) (numT)))
+                        (TBinding '<= (funT (list (numT) (numT)) (boolT)))
+                        (TBinding 'num-eq? (funT (list (numT) (numT)) (boolT)))
+                        (TBinding 'str-eq? (funT (list (strT) (strT)) (boolT)))
+                        (TBinding 'substring (funT (list (strT) (numT) (numT)) (strT)))
+                        (TBinding 'true (boolT))
+                        (TBinding 'false (boolT))))
+;;todo parse:
+;**will need to add parse clause for local-rec
+;**adjust lamb parse to match tpye checker
 
 ;;PARSING-------------------------------------------------------------------
 ;;Main Parse, input sexp, outputs exprC representing AST
@@ -54,13 +78,16 @@
                                     [else (error 'parse "ZODE: invalid symbol for an id")])] 
     [(? string? str)              (strC str)]
     [(list 'if ': check ': then ': else)     (ifC (parse check) (parse then) (parse else))]
+    ;;**edit here to match param types and return types
     [(list 'lamb ': params ... ': body)         (define syms (filter symbol? params))
                                                  (if(equal? (length syms) (length params))
                                                     (if (has-dups? syms)
                                                         (error 'parse "ZODE: Functions can't have duplicate params")
                                                         (lambC syms (parse body)))
                                                   (error 'parse"ZODE: Function contains non-symbol param"))]
-    ;;need to make sure id's in locals are valid using allowed? helper
+    ;;**add local-rec parse here
+
+    ;;**will need to adjust locals to handle types
     [(list 'locals ': clause ... ': ex)        (if (has-dups? (parse-clause-ids (cast clause (Listof Sexp))))
                                                   (error 'parse"ZODE: Locals can't have duplicate clauses")
                                                   (appC
@@ -75,7 +102,23 @@
     [(? list? aps)                    (appC (parse (first aps)) (map parse (rest aps)))]
     [else                         (error 'parse "ZODE: Invalid Zode Syntax")]))
 
-;;expected exception with message containing ZODE on test expression: '(parse '(locals : : = "" : "World"))
+
+;;PARSE-TYPE---------------------------------------
+;;**ask about the cast for funT parse
+(define (parse-type [exp : Sexp]): Ty
+  (match exp
+    ['num (numT)]
+    ['str (strT)]
+    ['bool (boolT)]
+    [(list ptypes ... '-> rtype)   (funT (map parse-type (cast ptypes (Listof Sexp))) (parse-type rtype))]
+    [else (error 'parse-types"ZODE: Invalid Type Syntax")]))
+
+;;test parse-type
+(check-equal? (parse-type 'num) (numT))
+(check-equal? (parse-type '{num str bool -> bool}) (funT (list (numT) (strT) (boolT)) (boolT)))
+(check-exn
+ #px"ZODE: Invalid Type Syntax"
+ (λ() (parse-type 'apple)))
 
 ;;PARSE LOCALS-------------------------------------
 ;;helper parse function, parses a clause and returns the list of ids
@@ -97,6 +140,10 @@
   (match clauses
     [(list _ '= val)                            (cons (parse val) '())]
     [(list _ '= val ': more-clauses ...)            (cons (parse val) (parse-clause-vals more-clauses))]))
+
+
+
+;;TYPE_CHECKING------------------------------------------------------------
 
  
 ;;INTERPING----------------------------------------------------------------
@@ -253,40 +300,34 @@
             (error 'interp "ZODE: operands must be reals")))
       (error 'interp "ZODE: expects exactly two operands")))
 
-
-;;prim-println
-(define (prim-println [args : (Listof Value)]): boolV
-  (match args
-    [(list (strV s)) (println s) (boolV 'true)]
-    [else (error'interp"ZODE: Invalid input to println")]))
-
-;;prim-printint
-(define (prim-printint [args : (Listof Value)]) : boolV
-  (match args
-    [(list (numV n)) (println (~v n)) (boolV 'true)]
-    [else (error'interp"ZODE: Invalid input to printint")]))
-
-;;prim-++
-(define (prim-++ [args : (Listof Value)]) : Value
-  (if(not(empty? args))
-     (strV (apply string-append (map serialize2 args)))
-     (error 'interp "ZODE:")))
-
-;;prim-seq
-(define (prim-seq [args : (Listof Value)]) : Value
-  (if (not (empty? args))
-      (last args)
-      (error 'interp "ZODE: seq expects at least one arguement")))
-
-;;prim-equal?
-(define (prim-equal? [args : (Listof Value)]): Value
+;;prim-num-eq?
+(define (prim-num-eq? [args : (Listof Value)]): Value
   (if (equal? (length args) 2)
       (let ([a (first args)]
             [b (second args)])
         (if (equal?  a  b)
             (boolV 'true)
             (boolV 'false))) 
-      (error 'interp "ZODE: expects exactly two operands")))
+      (error 'interp "ZODE: num-eq? expects exactly two operands")))
+
+;;prim-str-eq?
+(define (prim-str-eq? [args : (Listof Value)]): Value
+  (if (equal? (length args) 2)
+      (let ([a (first args)]
+            [b (second args)])
+        (if (equal?  a  b)
+            (boolV 'true)
+            (boolV 'false))) 
+      (error 'interp "ZODE: str-eq? expects exactly two operands")))
+
+;;prim-substring
+;;substring takes a string and a start and endinf index and returns the
+;;cooresponding substring
+(define (prim-substring [args : (Listof Value)]): strV
+  (match args
+    [(list (strV str) (numV (? exact-integer? s)) (numV (? exact-integer? e))) (strV (substring str s e))]
+    [else (error 'interp"ZODE: substring must take three arguement, string, int, int")]))
+
 
 ;;apply-prims, takes as input a Symbol op, and a list of values args
 ;;applys the appropriate primative operation and returns a Value
@@ -297,11 +338,9 @@
     ['-         (prim- args)]
     ['/         (prim/ args)]
     ['<=         (prim<= args)]
-    ['equal?     (prim-equal? args)]
-    ['println    (prim-println args)]
-    ['seq        (prim-seq args)]
-    ['++         (prim-++ args)]
-    ['printint   (prim-printint args)]
+    ['num-eq?    (prim-num-eq? args)]
+    ['str-eq?    (prim-str-eq? args)]
+    ['substring    (prim-substring args)]
     [else         (error 'interp"ZODE: ~e is not a valid operator" op)])
   )
 
@@ -441,9 +480,9 @@
 (check-equal? (top-interp 10) "10")
 (check-equal? (top-interp 'true) "true")
 (check-equal? (top-interp '{<= 9 10}) "true")
-(check-equal? (top-interp '{if : {equal? "nick" "nick"} : {/ 10 2} : {- 10 4}}) "5")
-(check-equal? (top-interp '{if : {equal? "nick" "nick"} : {/ 10 2} : {- 10 4}}) "5")
-(check-equal? (top-interp '{if : {equal? "nick" "drew"} : {/ 10 2} : {- 10 4}}) "6")
+(check-equal? (top-interp '{if : {str-eq? "nick" "nick"} : {/ 10 2} : {- 10 4}}) "5")
+(check-equal? (top-interp '{if : {str-eq? "nick" "nick"} : {/ 10 2} : {- 10 4}}) "5")
+(check-equal? (top-interp '{if : {str-eq? "nick" "drew"} : {/ 10 2} : {- 10 4}}) "6")
 (check-exn
  #px"ZODE: expects exactly two operands"
  (λ () (top-interp '{<= 10 20 30})))
@@ -469,17 +508,6 @@
 
 ;;+ as param, fails...why?
 (check-equal? (top-interp '{{lamb : / : {* / /}} 5}) "25")
-
-;;test println
-(check-equal? (top-interp '{println "hello"}) "true")
-(check-equal? (top-interp '{printint 22}) "true")
-
-;;test seq
-(check-equal? (top-interp '{seq {+ 10 20} {println "HELLO"} {+ 10 5}}) "15")
-
-;;test ++
-(check-equal? (top-interp '{++ "twelve" 12 "thirteen" 13}) "\"twelve12thirteen13\"")
-
 
 ;;HELPER TESTS------------------------------------------------------------------
 
@@ -541,13 +569,6 @@
  #px"ZODE: expects exactly two operands"
  (λ () (prim<= (list (numV 1) (numV 2) (numV 3)))))
 
-;;test prim-equal?
-(check-equal? (prim-equal? (list (numV 10) (strV "hi"))) (boolV 'false))
-(check-equal? (prim-equal? (list (strV "hi") (strV "hi"))) (boolV 'true))
-(check-exn
- #px"ZODE: expects exactly two operands"
- (λ () (prim-equal? (list (numV 1) (numV 2) (numV 3)))))
-
 ;;test prim-error
 (check-exn
  #px"ZODE: user-error \"uh oh\""
@@ -556,30 +577,23 @@
  #px"ZODE: error function takes only 1 input"
  (λ ()(prim-error (list (strV "uh oh") (strV "too many")))))
 
-
-;;test prim-++
-(check-equal? (prim-++ (list (strV "hello") (strV "jones"))) (strV "hellojones"))
+;;test prim-str-eq?
 (check-exn
- #px"ZODE:"
- (λ ()(prim-++ '())))
+ #px"ZODE: str-eq\\? expects exactly two operands"
+ (λ()(prim-str-eq? (list (strV "one") (strV "one") (strV "one")))))
 
-;;test prim-println
-(check-equal? (prim-println (list (strV "hello"))) (boolV 'true))
+;;test prim-num-eq?
+(check-equal? (prim-num-eq? (list (numV 10) (numV 2))) (boolV 'false))
 (check-exn
- #px"ZODE: Invalid input to println"
- (λ() (prim-println (list (numV 10)))))
+ #px"ZODE: num-eq\\? expects exactly two operands"
+ (λ()(prim-num-eq? (list (numV 1) (numV 1) (numV 1)))))
 
-;;test prim-printint
-(check-equal? (prim-printint (list (numV 10))) (boolV 'true))
+;;test prim-substring
+(check-equal? (prim-substring (list (strV "hello") (numV 1) (numV 3))) (strV "el"))
 (check-exn
- #px"ZODE: Invalid input to printint"
- (λ() (prim-printint (list (strV "bjdndjfn")))))
+ #px"ZODE: substring"
+ (λ()(prim-substring (list (strV "hello") (numV 10)))))
 
-;;test prim-seq
-(check-equal? (prim-seq (list (numV 8) (numV 10))) (numV 10))
-(check-exn
- #px"ZODE: seq expects at least one arguement"
- (λ()(prim-seq '())))
 
 ;test apply-prims
 (check-equal? (apply-prims '+ (list (numV 1) (numV 2))) (numV 3))
@@ -587,7 +601,9 @@
 (check-equal? (apply-prims '* (list (numV 1) (numV 2))) (numV 2))
 (check-equal? (apply-prims '/ (list (numV 2) (numV 1))) (numV 2))
 (check-equal? (apply-prims '<= (list (numV 1) (numV 2))) (boolV 'true))
-(check-equal? (apply-prims 'equal? (list (numV 1) (numV 1))) (boolV 'true))
+(check-equal? (apply-prims 'num-eq? (list (numV 1) (numV 1))) (boolV 'true))
+(check-equal? (apply-prims 'num-eq? (list (strV "one") (strV "one"))) (boolV 'true))
+(check-equal? (apply-prims 'substring (list (strV "apple") (numV 1) (numV 3))) (strV "pp"))
 (check-exn
  #px"ZODE: 'h is not a valid operator"
  (λ () (apply-prims 'h (list (numV 1) (numV 2)))))

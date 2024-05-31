@@ -60,7 +60,7 @@
   (match exp
     [(? real? n)                  (numC n)]
     [(? symbol? name)             (cond
-                                    [(allowed? name)       (idC name)]
+                                     [(allowed? name)       (idC name)]
                                     [else (error 'parse "ZODE: invalid symbol for an id")])] 
     [(? string? str)              (strC str)]
     ;;new match clause for mutations
