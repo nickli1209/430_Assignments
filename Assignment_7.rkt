@@ -25,7 +25,7 @@
 
 ;;for environments
 (struct Binding ([name : Symbol] [val : Value])#:transparent)
-(define-type Env (Listof Binding))
+(define-type Env (Listof Binding)) ;;this may need to include the tenv as well
 
 ;;for types
 (define-type Ty (U numT boolT strT funT))
@@ -95,7 +95,8 @@
                                                     (parse-clause-ids (cast clause (Listof Sexp)))
                                                     (parse ex))
                                                    (parse-clause-vals (cast clause (Listof Sexp)))))]
-    ;; probably not the best solution for invaid lamb and local but def easiest
+    ;; probably not the best solution for invalid lamb and local but def easiest
+    ;; why don't we group these into the else error
     [(list 'locals ': clause ... ':)           (error 'parse"ZODE: Locals must have a body expression")]
     [(list 'lamb ': _ ...)                            (error 'parse"ZODE: Invalid syntax for lamb")]
     ;;maybe need some error checking here for appC parse, 
@@ -144,6 +145,80 @@
 
 
 ;;TYPE_CHECKING------------------------------------------------------------
+;;"type checking should happen after parsing and before interpretation"
+;;for lambC, need a new helper which extends the type environment with the argument type
+;;then type check on body and compare to return type, then return a funT
+(define (type-check [exp : ExprC] [tenv : TEnv]) : Ty
+  (match exp
+    [(numC n)                    (numT)]
+    [(idC id)                    (ty-lookup id tenv)]
+    [(strC s)                    (strT)]
+    [(ifC check then else)       (if (equal? (type-check check tenv) (boolT))
+                                     (numT) ;;this is wrong, placeholder for possibly adding ifT type
+                                     (error 'type-check "ZODE: if condition not a boolean"))]
+    ;;[(lambC params body)         (if (equal? ))]
+    [(appC f args)               (let ([funt (type-check f tenv)]
+                                       [argts (map (λ (arg) (type-check (cast arg ExprC) tenv)) args)])
+                                   (cond
+                                     [(not (funT? funt))
+                                      (error 'type-check "ZODE: non function type applied to arguments")]
+                                     [(not (equal? (funT-params funt) argts))
+                                      (error 'type-check "ZODE: arguments not of compatible type to function")]
+                                     [else (funT-return funt)]))]))
+
+(check-equal? (type-check (numC 5) base-tenv) (numT))
+(check-equal? (type-check (strC "fig") base-tenv) (strT))
+
+#;[lamC (a argT retT b)
+      (if (equal? (tc b (extend-ty-env (bind a argT) tenv)) retT)
+          (funT argT retT)
+          (error 'tc "lam type mismatch"))]
+
+;;(map (λ (arg) (interp (cast arg ExprC) env)) args)
+
+;; [appC (f a) (let ([ft (tc f tenv)]
+;;                   [at (tc a tenv)])
+;;               (cond
+;;                 [(not (funT? ft))
+;;                  (error 'tc "not a function")]
+;;                 [(not (equal? (funT-arg ft) at))
+;;                  (error 'tc "app arg mismatch")]
+;;                 [else (funT-ret ft)]))]
+
+;;TYPE ENVIRONMENT LOOKUP-------------------------------------------------------
+;;same as lookup but for types
+;;returns a Ty instead of a Value
+(define (ty-lookup [for : Symbol] [tenv : TEnv]) : Ty
+  (match tenv
+    ['()   (error 'ty-lookup "ZODE: name not found in type environment: ~e" for)]
+    [(cons (TBinding name ty) r)    (cond
+                                      [(symbol=? for name) ty]
+                                      [else (ty-lookup for r)])]))
+
+(check-equal? (type-check (idC '+) base-tenv) (funT (list (numT) (numT)) (numT)))
+(check-equal? (type-check (idC 'true) base-tenv) (boolT))
+(check-equal? (type-check (appC (idC '+) (list (numC 5) (numC 6))) base-tenv) (numT))
+(check-equal? (type-check (appC (idC '+)
+                                (list (numC 5) (appC (idC '-)
+                                                     (list (numC 10) (numC 3)))))
+                          base-tenv) (numT))
+(check-equal? (type-check (ifC (appC (idC 'num-eq?) (list (numC 0) (numC 0)))
+                               (numC 1)
+                               (numC -1)) base-tenv) (numT))
+(check-exn
+ #px"ZODE: if condition not a boolean"
+ (λ () (type-check (ifC (appC (idC 'substring) (list (strC "apple") (numC 1) (numC 3)))
+                        (numC 1)
+                        (numC -1)) base-tenv)))
+(check-exn
+ #px"ZODE: name not found in type environment: 'banana"
+ (λ () (type-check (idC 'banana) base-tenv)))
+(check-exn
+ #px"ZODE: non function type applied to arguments"
+ (λ () (type-check (appC (numC 2) (list (numC 3) (numC 4))) base-tenv)))
+(check-exn
+ #px"ZODE: arguments not of compatible type to function"
+ (λ () (type-check (appC (idC '+) (list (idC '-) (numC 5))) base-tenv)))
 
  
 ;;INTERPING----------------------------------------------------------------
