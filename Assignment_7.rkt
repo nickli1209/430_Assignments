@@ -4,7 +4,7 @@
 ;;just starting, nothing new implimented...
 ;;TYPES AND STRUCTS---------------------------------------------------------
 ;;for expressions AST
-(define-type ExprC (U numC idC lambC appC strC ifC))
+(define-type ExprC (U numC idC lambC appC strC ifC lambC-ty))
 (struct numC ([n : Real])#:transparent)
 (struct idC ([name : Symbol])#:transparent)
 ;;commented out to supress errors for now
@@ -184,6 +184,10 @@
   (define new-tenv (map TBinding params tys))
   (append new-tenv tenv))
 
+;;testing extend-tenv
+(check-equal? (extend-tenv (list 'x) (list (numT)) (list (TBinding 'a (strT)))) (list (TBinding 'x (numT))
+                                                                                      (TBinding 'a (strT))))
+
 #;(define (extend-env [params : (Listof Symbol)] [args : (Listof Value)] [org-env : Env]): Env
   ;;length of args and params already checked equal ininterp
   ;;add check here if needed anywhere other than interp appC
@@ -215,6 +219,7 @@
                                       [(symbol=? for name) ty]
                                       [else (ty-lookup for r)])]))
 
+;;TYPE-CHECK TESTS
 (check-equal? (type-check (idC '+) base-tenv) (funT (list (numT) (numT)) (numT)))
 (check-equal? (type-check (idC 'true) base-tenv) (boolT))
 (check-equal? (type-check (appC (idC '+) (list (numC 5) (numC 6))) base-tenv) (numT))
@@ -225,6 +230,15 @@
 (check-equal? (type-check (ifC (appC (idC 'num-eq?) (list (numC 0) (numC 0)))
                                (numC 1)
                                (numC -1)) base-tenv) (numT))
+(check-equal? (type-check (lambC-ty (list 'x 'y) (list (numT) (numT))
+                                    (boolT)
+                                    (appC (idC 'num-eq?) (list (numC 0) (numC 1)))) base-tenv)
+              (funT (list (numT) (numT)) (boolT)))
+(check-exn
+ #px"ZODE: lamb type mismatch"
+ (λ () (type-check (lambC-ty (list 'x 'y) (list (numT) (numT))
+                                    (strT)
+                                    (appC (idC 'num-eq?) (list (numC 0) (numC 1)))) base-tenv)))
 (check-exn
  #px"ZODE: if condition not a boolean"
  (λ () (type-check (ifC (appC (idC 'substring) (list (strC "apple") (numC 1) (numC 3)))
@@ -474,6 +488,8 @@
 ;;PARSE_TESTS-------------------------------------------------------------------
 #;(check-equal? (parse '{lamb : [num x] [num y] -> num : {+ x 5}})
               (lambC (list 'x 'y) (list (numT) (numT)) (numT) (appC (idC '+) (list (idC 'x) (numC 5)))))
+(check-equal? (parse '{lamb : x y : {+ x 5}})
+              (lambC (list 'x 'y) (appC (idC '+) (list (idC 'x) (numC 5)))))
 (check-equal? (parse '{lamb : x : {+ x {lamb : y : {- y 1}}}})
               (lambC (list 'x) (appC (idC '+) (list (idC 'x)
                                                     (lambC (list 'y) (appC (idC '-) (list (idC 'y) (numC 1))))))))
