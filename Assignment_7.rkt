@@ -9,6 +9,7 @@
 (struct idC ([name : Symbol])#:transparent)
 ;;commented out to supress errors for now
 ;;(struct lambC ([params : (Listof (Pair Ty Symbol))] [body : ExprC] [return : Ty]) #:transparent)
+(struct lambC-ty ([params : (Listof Symbol)] [paramTs : (Listof Ty)] [retT : Ty] [body : ExprC]))
 (struct lambC ([params : (Listof Symbol)] [body : ExprC]) #:transparent)
 (struct strC ([str : String])#:transparent)
 (struct appC([f : ExprC] [args : (Listof ExprC)])#:transparent)
@@ -79,6 +80,7 @@
     [(? string? str)              (strC str)]
     [(list 'if ': check ': then ': else)     (ifC (parse check) (parse then) (parse else))]
     ;;**edit here to match param types and return types
+    ;;lamb needs to be updated to handle types
     [(list 'lamb ': params ... ': body)         (define syms (filter symbol? params))
                                                  (if(equal? (length syms) (length params))
                                                     (if (has-dups? syms)
@@ -153,10 +155,16 @@
     [(numC n)                    (numT)]
     [(idC id)                    (ty-lookup id tenv)]
     [(strC s)                    (strT)]
-    [(ifC check then else)       (if (equal? (type-check check tenv) (boolT))
-                                     (numT) ;;this is wrong, placeholder for possibly adding ifT type
+    [(ifC cond then else)        (if (equal? (type-check cond tenv) (boolT))
+                                     (if (equal? (type-check then tenv) (type-check else tenv))
+                                         (type-check then tenv)
+                                         (error 'type-check
+                                                "ZODE: then and else statements do not match"))
                                      (error 'type-check "ZODE: if condition not a boolean"))]
-    ;;[(lambC params body)         (if (equal? ))]
+    [(lambC-ty args argTs retT body)         (if (equal? (type-check body (extend-tenv args argTs tenv)) retT)
+                                              (funT argTs retT)
+                                              (error 'type-check "ZODE: lamb type mismatch"))]
+    ;;example: lamb : [{num -> str}]
     [(appC f args)               (let ([funt (type-check f tenv)]
                                        [argts (map (λ (arg) (type-check (cast arg ExprC) tenv)) args)])
                                    (cond
@@ -166,13 +174,25 @@
                                       (error 'type-check "ZODE: arguments not of compatible type to function")]
                                      [else (funT-return funt)]))]))
 
-(check-equal? (type-check (numC 5) base-tenv) (numT))
-(check-equal? (type-check (strC "fig") base-tenv) (strT))
-
 #;[lamC (a argT retT b)
       (if (equal? (tc b (extend-ty-env (bind a argT) tenv)) retT)
           (funT argT retT)
           (error 'tc "lam type mismatch"))]
+
+;;EXTEND TYPE ENVIRONMENT
+(define (extend-tenv [params : (Listof Symbol)] [tys : (Listof Ty)] [tenv : TEnv]) : TEnv
+  (define new-tenv (map TBinding params tys))
+  (append new-tenv tenv))
+
+#;(define (extend-env [params : (Listof Symbol)] [args : (Listof Value)] [org-env : Env]): Env
+  ;;length of args and params already checked equal ininterp
+  ;;add check here if needed anywhere other than interp appC
+  (define new-env (map Binding params args));;maps each param to each arg in a Binding
+  ;;flipped order of appends, to allow for prim ops as variables, that way looks up local before top-env
+  (append new-env org-env))
+
+(check-equal? (type-check (numC 5) base-tenv) (numT))
+(check-equal? (type-check (strC "fig") base-tenv) (strT))
 
 ;;(map (λ (arg) (interp (cast arg ExprC) env)) args)
 
@@ -210,6 +230,11 @@
  (λ () (type-check (ifC (appC (idC 'substring) (list (strC "apple") (numC 1) (numC 3)))
                         (numC 1)
                         (numC -1)) base-tenv)))
+(check-exn
+ #px"ZODE: then and else statements do not match"
+ (λ () (type-check (ifC (appC (idC 'num-eq?) (list (numC 0) (numC 0)))
+                        (numC 1)
+                        (idC 'false)) base-tenv)))
 (check-exn
  #px"ZODE: name not found in type environment: 'banana"
  (λ () (type-check (idC 'banana) base-tenv)))
@@ -447,7 +472,8 @@
 
 
 ;;PARSE_TESTS-------------------------------------------------------------------
-(check-equal? (parse '{lamb : x y : {+ x 5}}) (lambC (list 'x 'y) (appC (idC '+) (list (idC 'x) (numC 5)))))
+#;(check-equal? (parse '{lamb : [num x] [num y] -> num : {+ x 5}})
+              (lambC (list 'x 'y) (list (numT) (numT)) (numT) (appC (idC '+) (list (idC 'x) (numC 5)))))
 (check-equal? (parse '{lamb : x : {+ x {lamb : y : {- y 1}}}})
               (lambC (list 'x) (appC (idC '+) (list (idC 'x)
                                                     (lambC (list 'y) (appC (idC '-) (list (idC 'y) (numC 1))))))))
