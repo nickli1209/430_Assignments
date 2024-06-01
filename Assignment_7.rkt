@@ -619,8 +619,9 @@
  (λ () (top-interp '{7 8 9})))
 )
 ;;*******************************************************************************************
-;;stopped here, this test below currently fails, type-check needs to be tweaked, then
-;;few more top interp test, then can move on to adding bindings to boxes
+;;stopped here, this test below currently fails, type-check needs to be tweaked has to do
+;;with the return type of lamb in locals being false, part 6 of spec mentions this, then after this
+;;there are a few more top interp test, then can move on to adding bindings to boxes
 ;;then can add parse for local-rec, typecheck for local-rec, then finally interp for local-rec
 
 ;;test locals
