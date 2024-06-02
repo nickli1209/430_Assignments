@@ -1,10 +1,12 @@
 #lang typed/racket
 (require typed/rackunit)
 ;;ZODE 7, typechecking
-;;just starting, nothing new implimented...
+;;type checker and local rec fully implemented, 1 failed test case
+;;see below the type checker line 199 for the test debug process so far
+
 ;;TYPES AND STRUCTS---------------------------------------------------------
 ;;for expressions AST
-(define-type ExprC (U numC idC lambC appC strC ifC))
+(define-type ExprC (U numC idC lambC appC strC ifC local-recC))
 (struct numC ([n : Real])#:transparent)
 (struct idC ([name : Symbol])#:transparent)
 (struct lambC ([params : (Listof Symbol)] [paramTs : (Listof Ty)] [retT : (Option Ty)] [body : ExprC])#:transparent)
@@ -23,7 +25,7 @@
 (struct primV ([s : Symbol])#:transparent)
 
 ;;for environments
-(struct Binding ([name : Symbol] [val : Value])#:transparent)
+(struct Binding ([name : Symbol] [val : (Boxof Value)])#:transparent)
 (define-type Env (Listof Binding)) ;;this may need to include the tenv as well
 
 ;;for types
@@ -40,18 +42,18 @@
 ;;TOP ENVIRONEMNT--------------------------------------------------------------
 ;;holds all primative type valid in any environment, regardless of locals
 ;;or lamb params
-(define top-env (list (Binding '+ (primV '+))
-                      (Binding '- (primV '-))
-                      (Binding '* (primV '*))
-                      (Binding '/ (primV '/))
-                      (Binding '<= (primV '<=))
-                      (Binding 'equal? (primV 'equal?))
-                      (Binding 'error (primV 'error))
-                      (Binding 'true (boolV 'true))
-                      (Binding 'false (boolV 'false))
-                      (Binding 'num-eq? (primV 'num-eq?))
-                      (Binding 'str-eq? (primV 'str-eq?))
-                      (Binding 'substring (primV 'substring))))
+(define top-env (list (Binding '+ (box (primV '+)))
+                      (Binding '- (box (primV '-)))
+                      (Binding '* (box (primV '*)))
+                      (Binding '/ (box (primV '/)))
+                      (Binding '<= (box (primV '<=)))
+                      (Binding 'equal? (box (primV 'equal?)))
+                      (Binding 'error (box (primV 'error)))
+                      (Binding 'true (box (boolV 'true)))
+                      (Binding 'false (box (boolV 'false)))
+                      (Binding 'num-eq? (box (primV 'num-eq?)))
+                      (Binding 'str-eq? (box (primV 'str-eq?)))
+                      (Binding 'substring (box (primV 'substring)))))
 
 ;;base type environment, holds the type requirements for the primV's
 (define base-tenv (list (TBinding '+ (funT (list (numT) (numT)) (numT)))
@@ -78,8 +80,10 @@
                                     [else (error 'parse "ZODE: invalid symbol for an id")])] 
     [(? string? str)              (strC str)]
     [(list 'if ': check ': then ': else)     (ifC (parse check) (parse then) (parse else))]
-    [(list 'lamb ': type-param-pair ... '-> rtype ': body)  (parse-lamb (cast type-param-pair (Listof Sexp)) rtype body)]
+    [(list 'lamb ': type-param-pair ... '-> rtype ': body)
+     (parse-lamb (cast type-param-pair (Listof Sexp)) rtype body)]
     ;;**add local-rec parse here
+    [(list 'local-rec ': (? symbol? id) '= lamb-def ': ex)       (local-recC id (parse lamb-def) (parse ex))]
     [(list 'locals ': clause ... ': ex)        (if (has-dups? (parse-clause-ids (cast clause (Listof Sexp))))
                                                   (error 'parse"ZODE: Locals can't have duplicate clauses")
                                                   (appC
@@ -96,7 +100,6 @@
     [(? list? aps)                    (appC (parse (first aps)) (map parse (rest aps)))]
     [else                         (error 'parse "ZODE: Invalid Zode Syntax")]))
 
-
 ;;parse-lamb
 (define (parse-lamb [tpair : (Listof Sexp)] [rtype : Sexp] [body : Sexp]): ExprC
   (define params (map (λ (pair)
@@ -109,6 +112,7 @@
   (define ptypes (map (λ (pair)
                        (match pair
                          [(list type sym)
+                          ;;this cast is def a red flag, can fix it...
                           (parse-type (cast type Sexp))]))
                      tpair))
   (if (and (not (has-dups? params))(equal? (length params) (length ptypes)))
@@ -124,7 +128,6 @@
     ['bool (boolT)]
     [(list ptypes ... '-> rtype)   (funT (map parse-type (cast ptypes (Listof Sexp))) (parse-type rtype))]
     [else (error 'parse-types"ZODE: Invalid Type Syntax")]))
-
 
 ;;PARSE LOCALS HELPERS---------------------------------------------------
 ;;helper parse function, parses a clause and returns the list of ids
@@ -170,25 +173,47 @@
                                          (error 'type-check
                                                 "ZODE: then and else statements do not match"))
                                      (error 'type-check "ZODE: if condition not a boolean"))]
-    [(lambC args argTs retT body)        (if (equal? (type-check body (extend-tenv args argTs tenv)) retT)
-                                              (funT argTs retT)
-                                              (error 'type-check "ZODE: lamb type mismatch"))]
-    ;;maybe doe this for lambC:
-                                          #;(if(equal? retT #f)
-                                             (type-check body (extend-tenv args argTs tenv))
-                                             (if (equal? (type-check body (extend-tenv args argTs tenv)) retT)
-                                              (funT argTs retT)
-                                              (error 'type-check "ZODE: lamb type mismatch")))
+    
+    [(lambC args argTs retT body)  (define tbody (type-check body (extend-tenv args argTs tenv)))
+                                      (if (or (false? retT) (equal? retT tbody)) 
+                                      (funT argTs tbody)
+                                      (error 'type-check "ZODE: lamb type mismatch"))]
     ;;example: lamb : [{num -> str}]
+    ;;extend the type environment to include name and lamb type
+    ;;check for equality between return type and body type
+    ;;return recC type
+    [(local-recC (? symbol? sym) lamb-def ex)        (define lamb-ty (type-check lamb-def tenv))
+                                                     (define new-tenv (extend-tenv (list sym) (list lamb-ty) tenv))                                                        
+                                                     (type-check ex new-tenv)]
     [(appC f args)               (let ([funt (type-check f tenv)]
                                        [argts (map (λ (arg) (type-check (cast arg ExprC) tenv)) args)])
                                    (cond
                                      [(not (funT? funt))
                                       (error 'type-check "ZODE: non function type applied to arguments")]
+                                     [(not (equal? (length (funT-params funt)) (length argts)))
+                                      (error 'type-check"ZODE: Invalid number of arguments to function")]
                                      [(not (equal? (funT-params funt) argts))
                                       (error 'type-check "ZODE: arguments not of compatible type to function")]
                                      [else (funT-return funt)]))]))
 
+;;DIAGNOSING last error:-------------------------------------------------------
+#;{lamb : [num fst] [{num -> num} rst] -> {num -> num}
+                                         : {rst fst}}
+;;when top-interping this lamb, the type-check error lamb-type-mismatch is caught
+;;parsing it returns:
+#;(lambC '(fst rst)
+       (list (numT) (funT (list (numT)) (numT)))
+       (funT (list (numT)) (numT))
+       (appC (idC 'rst) (list (idC 'fst))))
+;;then calling type check on this throws an error, as a result of the type check of the
+;;body not being equal to the return type of the lamb
+#;(type-check (appC (idC 'rst) (list (idC 'fst)))
+(extend-tenv '(fst rst) (list (numT) (funT (list (numT)) (numT))) base-tenv))
+;;the above call to type check of just the body of the lamb (appC) with the properly extended environment, returns
+;; the type (numT), which is clearly not (funT (list (numT)) (numT))
+;;why is this...
+
+                                
 ;;EXTEND TYPE ENVIRONMENT
 (define (extend-tenv [params : (Listof Symbol)] [tys : (Listof Ty)] [tenv : TEnv]) : TEnv
   (define new-tenv (map TBinding params tys))
@@ -212,24 +237,22 @@
   (match exp
     [(numC n)                   (numV n)]
     [(strC str)                 (strV str)]
-    [(idC id)                   (lookup id env)]
+    [(idC id)                   (unbox (lookup id env))]
     [(ifC check then else) (cond
                              [(equal? (interp check env) (boolV 'true))   (interp then env)]
                              [(equal? (interp check env) (boolV 'false))  (interp else env)]
                              [else (error 'interp"ZODE: if condition not a boolean")])]
+    
     [(lambC params types rtype body)   (cloV params body env)] ;;primV are created by bindings in top-env
+    [(local-recC id (lambC args argts rt ex) body)       (define id-env (extend-env (list id) (list (numV 0)) env))
+                                                         (begin
+                                                           (set-box! (lookup id id-env) (cloV args ex id-env))
+                                                           (interp body id-env))]
     [(appC f args)         (define args-int (map (λ (arg) (interp (cast arg ExprC) env)) args))
                            (match (interp f env)
-                             [(cloV params body env)
-                              (if (equal? (length params) (length args-int))
-                                  (interp body (extend-env params args-int env))
-                                  (error 'interp "ZODE : Invalid number of arguments in function call"))]
+                             [(cloV params body env) (interp body (extend-env params args-int env))]
                              ;;primV still work in progress, need to finish helpers
-                             [(primV op)       (cond
-                                                 [(equal? op 'error)    (prim-error args-int)]
-                                                 ;;[(equal? op 'println)   (prim-println args-int)]
-                                                 ;;need to add case to apply-prims given the op here
-                                                 [else (apply-prims op args-int)])]
+                             [(primV op)       (apply-prims op args-int)]
                              [else (error'interp (format "ZODE: ~a is not a valid application"
                                                          (serialize (interp f env))))])]))
 
@@ -263,7 +286,7 @@
 ;;!!!that way wont need a cond everywhere we lookup to check both env's
 ;;lookup takes as input a symbol representing an idC, and checks the passed
 ;;environment env for its value, returning a number as of now...
-  (define (lookup [for : Symbol] [env : Env]) : Value
+  (define (lookup [for : Symbol] [env : Env]) : (Boxof Value)
     (match env
       ['() (error 'lookup "ZODE: name not found: ~e" for)]
       [(cons (Binding name val) r) (cond
@@ -302,7 +325,8 @@
 (define (extend-env [params : (Listof Symbol)] [args : (Listof Value)] [org-env : Env]): Env
   ;;length of args and params already checked equal ininterp
   ;;add check here if needed anywhere other than interp appC
-  (define new-env (map Binding params args));;maps each param to each arg in a Binding
+  (define new-env (map (λ ([param : Symbol] [arg : Value]) (Binding param (box arg))) params args))
+  ;;maps each param to each arg in a Binding
   ;;flipped order of appends, to allow for prim ops as variables, that way looks up local before top-env
   (append new-env org-env))
 
@@ -433,14 +457,16 @@
 
 
 ;;PARSE_TESTS-------------------------------------------------------------------
-#;(check-equal? (parse '{lamb : [num x] [num y] -> num : {+ x 5}})
-              (lambC (list 'x 'y) (list (numT) (numT)) (numT) (appC (idC '+) (list (idC 'x) (numC 5)))))
 (check-equal? (parse '{lamb : [num x] [num y] -> num : {+ x 5}})
               (lambC (list 'x 'y) (list (numT) (numT)) (numT)(appC (idC '+) (list (idC 'x) (numC 5)))))
 
 (check-equal? (parse '{lamb : [num x] -> {num -> num} : {+ x {lamb : [num y] -> num : {- y 1}}}})
-              (lambC (list 'x) (list (numT)) (funT (list (numT)) (numT)) (appC (idC '+) (list (idC 'x)
-                                                    (lambC (list 'y) (list (numT)) (numT)(appC (idC '-) (list (idC 'y) (numC 1))))))))
+              (lambC (list 'x) (list (numT)) (funT (list (numT)) (numT))
+                     (appC (idC '+) (list (idC 'x)
+                                          (lambC (list 'y)
+                                                 (list (numT))
+                                                 (numT)
+                                                 (appC (idC '-) (list (idC 'y) (numC 1))))))))
 
 (check-equal? (parse '{/ f g} ) (appC (idC '/) (list (idC 'f) (idC 'g))))
 
@@ -458,11 +484,29 @@
               (appC (lambC (list 'x) (list (numT)) #f (appC (idC '+) (list (idC 'x) (numC 1)))) (list (numC 5))))
 
 (check-equal? (parse '{locals : num x = 5 : num y = 7 : {+ x y}})
-              (appC (lambC (list 'x 'y) (list (numT) (numT)) #f (appC (idC '+) (list (idC 'x) (idC 'y)))) (list (numC 5) (numC 7))))
+              (appC (lambC (list 'x 'y)
+                           (list (numT) (numT))
+                           #f
+                           (appC (idC '+) (list (idC 'x) (idC 'y))))
+                    (list (numC 5) (numC 7))))
 
-(check-equal? (parse '{locals : {num -> {num -> num}} f = {lamb : [num x] -> {num -> num} : {lamb : [num y] -> num : {+ x y}}} : {{f 3} 7}})
-              (appC (lambC (list 'f) (list (funT (list (numT)) (funT (list (numT)) (numT)))) #f (appC (appC (idC 'f) (list (numC 3))) (list (numC 7))))
-                    (list (lambC (list 'x) (list (numT)) (funT (list (numT)) (numT)) (lambC (list 'y) (list (numT)) (numT) (appC (idC '+) (list (idC 'x) (idC 'y))))))))
+(check-equal? (parse '{locals : {num -> {num -> num}} f = {lamb : [num x] -> {num -> num}
+                                                                : {lamb : [num y] -> num : {+ x y}}}
+                              : {{f 3} 7}})
+              (appC (lambC (list 'f)
+                           (list (funT (list (numT)) (funT (list (numT)) (numT))))
+                           #f
+                           (appC (appC (idC 'f) (list (numC 3))) (list (numC 7))))
+                    (list (lambC (list 'x)
+                                 (list (numT))
+                                 (funT (list (numT)) (numT))
+                                 (lambC (list 'y) (list (numT)) (numT) (appC (idC '+) (list (idC 'x) (idC 'y))))))))
+;;TEST PARSE LOCAL-REC
+(check-equal? (parse '{local-rec : f = {lamb : [num x] -> num : {+ 1 x}}
+                                 : {+ 6 7}})
+              (local-recC 'f
+                          (lambC (list 'x) (list (numT)) (numT) (appC (idC '+) (list (numC 1) (idC 'x))))
+                          (appC (idC '+) (list (numC 6) (numC 7)))))
 
 (check-exn
  #px"ZODE: Invalid clause syntax"
@@ -555,23 +599,55 @@
  #px"ZODE: arguments not of compatible type to function"
  (λ () (type-check (appC (idC '+) (list (idC '-) (numC 5))) base-tenv)))
 
+;;TEST TYPE CHECK FOR LOCAL RECS
+(check-equal? (type-check (local-recC 'f
+                                      (lambC (list 'x 'y)
+                                             (list (numT) (numT))
+                                             (numT)
+                                             (appC (idC '+) (list (idC 'x) (idC 'y))))
+                                      (appC (idC 'f) (list (numC 2) (numC 3))))
+                          base-tenv)
+              (numT))
+
 
 ;;TEST INTERP-------------------------------------------------------------------
 
 (check-equal? (interp (numC 10) '()) (numV 10))
 (check-equal? (interp (strC "hello world") '()) (strV "hello world"))
-(check-equal? (interp (idC 'x) (list (Binding 'x (numV 10)))) (numV 10))
+(check-equal? (interp (idC 'x) (list (Binding 'x (box (numV 10))))) (numV 10))
 (check-exn ;;tests lookup on variable not bound in env
  #px"ZODE: name not found"
- (λ () (interp (idC 'y) (list (Binding 'x (numV 10))))))
+ (λ () (interp (idC 'y) (list (Binding 'x (box (numV 10)))))))
 ;;test if
-(check-equal? (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (boolV 'true)))) (numV 1))
-(check-equal? (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (boolV 'false)))) (numV 0))
+(check-equal? (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (box (boolV 'true))))) (numV 1))
+(check-equal? (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (box (boolV 'false))))) (numV 0))
 (check-exn
  #px"ZODE: if condition not a boolean"
- (λ () (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (numV 10))))))
+ (λ () (interp (ifC (idC 'x) (numC 1) (numC 0)) (list (Binding 'x (box (numV 10)))))))
 ;;test lamb
-(check-equal? (interp (lambC (list 'x 'y 'z) (list (numT) (numT) (numT)) (numT)(numC 10)) '()) (cloV (list 'x 'y 'z) (numC 10) '()))
+(check-equal? (interp (lambC (list 'x 'y 'z)
+                             (list (numT) (numT) (numT))
+                             (numT)
+                             (numC 10)) '())
+              (cloV (list 'x 'y 'z) (numC 10) '()))
+
+(check-exn
+ #px"ZODE: 10 is not a valid application"
+ (λ()(interp (appC (idC 'apple) (list (numC 10))) (list (Binding 'apple (box (numV 10)))))))
+;;TEST INTERP LOCAL REC
+(check-equal? (interp (local-recC
+                       'fact
+                       (lambC (list 'n)
+                              (list (numT))
+                              (numT)
+                              (ifC (appC (idC 'num-eq?)(list (idC 'n) (numC 0)))
+                                   (numC 1)
+                                   (appC (idC '*)
+                                         (list (idC 'n) (appC (idC 'fact)
+                                                     (list (appC (idC '-)
+                                                                 (list (idC 'n) (numC 1)))))))))
+                       (appC (idC 'fact) (list (numC 5)))) top-env)
+              (numV 120))
 
 ;;TEST SERIALIZE
 (check-equal? (serialize (numV 10)) "10")
@@ -595,34 +671,31 @@
  #px"Invalid boolean value 'notabool"
  (λ () (serialize2 (boolV 'notabool))))
 
-#;(;;TEST TOP-INTERP---------------------------------------------------------------
+;;TEST TOP-INTERP---------------------------------------------------------------
 (check-equal? (top-interp "hello world") "\"hello world\"")
 (check-equal? (top-interp 10) "10")
 (check-equal? (top-interp 'true) "true")
 (check-equal? (top-interp '{<= 9 10}) "true")
+
 (check-equal? (top-interp '{if : {str-eq? "nick" "nick"} : {/ 10 2} : {- 10 4}}) "5")
 (check-equal? (top-interp '{if : {str-eq? "nick" "nick"} : {/ 10 2} : {- 10 4}}) "5")
 (check-equal? (top-interp '{if : {str-eq? "nick" "drew"} : {/ 10 2} : {- 10 4}}) "6")
+
 (check-exn
- #px"ZODE: expects exactly two operands"
+ #px"ZODE: Invalid number of arguments to function"
  (λ () (top-interp '{<= 10 20 30})))
+
+(check-equal? (top-interp '{{lamb : [num x] [num y] -> num : {+ x y}} 5 6}) "11")
+;;caught by type checker now so new error message was required, old one
+;;for num args in interp prob not required
 (check-exn
- #px"ZODE: user-error \"NOT GOOD\""
- (λ () (top-interp '{error "NOT GOOD"})))
-(check-equal? (top-interp '{{lamb : x y : {+ x y}} 5 6}) "11")
-(check-exn
- #px"ZODE : Invalid number of arguments in function call"
- (λ () (top-interp '{{lamb : x y : {+ x y}} 5 6 7})))
+ #px"ZODE: Invalid number of arguments to function"
+ (λ () (top-interp '{{lamb : [num x] [num y] -> num : {+ x y}} 5 6 7})))
+
 ;;not valid application test
 (check-exn
- #px"ZODE: 7 is not a valid application"
+ #px"ZODE: non function type applied to arguments" 
  (λ () (top-interp '{7 8 9})))
-)
-;;*******************************************************************************************
-;;stopped here, this test below currently fails, type-check needs to be tweaked has to do
-;;with the return type of lamb in locals being false, part 6 of spec mentions this, then after this
-;;there are a few more top interp test, then can move on to adding bindings to boxes
-;;then can add parse for local-rec, typecheck for local-rec, then finally interp for local-rec
 
 ;;test locals
 (check-equal? (top-interp '{locals : {num num -> num} f = {lamb : [num x] [num y] -> num : {+ {* y y} {* x x}}}
@@ -636,6 +709,14 @@
 
 ;;+ as param, fails...why?
 (check-equal? (top-interp '{{lamb : [num /] -> num : {* / /}} 5}) "25")
+
+;;failing test case, specifically second lamb is triggering the failure
+#;(check-equal? (top-interp '{locals : {num -> num} empty = {lamb : [num idx] -> num
+                                                                : {/ 190374 0}}
+                                   : {num {num -> num} -> {num -> num}} cons =
+                                   {lamb : [num fst] [{num -> num} rst] -> {num -> num}
+                                         : {rst fst}}
+                                   : {cons 5 empty}}) "dc")
 
 ;;HELPER TESTS------------------------------------------------------------------
 
@@ -651,12 +732,12 @@
  (λ() (parse-clause-types '{x == : {+ 5 6}})))
 
 ;;test extend-env, flipped order, to allow for prim ops as variables
-(check-equal? (extend-env (list 'x 'y 'z) (list (numV 1) (numV 2) (numV 3)) (list (Binding 'a (numV 10))))
+(check-equal? (extend-env (list 'x 'y 'z) (list (numV 1) (numV 2) (numV 3)) (list (Binding 'a (box (numV 10)))))
               (list
-               (Binding 'x (numV 1))
-               (Binding 'y (numV 2))
-               (Binding 'z (numV 3))
-               (Binding 'a (numV 10))))
+               (Binding 'x (box (numV 1)))
+               (Binding 'y (box (numV 2)))
+               (Binding 'z (box (numV 3)))
+               (Binding 'a (box (numV 10)))))
 
 ;;testing extend-tenv
 (check-equal? (extend-tenv (list 'x) (list (numT)) (list (TBinding 'a (strT)))) (list (TBinding 'x (numT))
