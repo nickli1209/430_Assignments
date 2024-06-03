@@ -209,7 +209,8 @@
 ;;body not being equal to the return type of the lamb
 #;(type-check (appC (idC 'rst) (list (idC 'fst)))
 (extend-tenv '(fst rst) (list (numT) (funT (list (numT)) (numT))) base-tenv))
-;;the above call to type check of just the body of the lamb (appC) with the properly extended environment, returns
+;;the above call to type check of just the body of the lamb (appC)
+;;with the properly extended environment, returns
 ;; the type (numT), which is clearly not (funT (list (numT)) (numT))
 ;;why is this...
 
