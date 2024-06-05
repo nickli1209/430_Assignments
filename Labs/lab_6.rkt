@@ -37,14 +37,17 @@
 ;;max depth
 
 (define (random-term [max-depth : Natural]) : ExprC
-  (if (= max-depth 0)
+  (if (<= max-depth 1)
       (random-base-term)
-      (let ([exp-idx (random 3)])
+      (let ([exp-idx (random 6)])
          (cond
-           [(= exp-idx 0)     (ifC (random-term (- max-depth 1))
+           [(= exp-idx 0)     (numC (random 100))]
+           [(= exp-idx 1)     (idC (random-symbol))]
+           [(= exp-idx 2)     (strC (format "str~a" (random 100)))]
+           [(= exp-idx 3)     (ifC (random-term (- max-depth 1))
                                    (random-term (- max-depth 1))
                                    (random-term (- max-depth 1)))]
-           [(= exp-idx 1)     (let ([num-syms (random 4)])
+           [(= exp-idx 4)     (let ([num-syms (random 4)])
                                 (lambC (make-syms num-syms) (random-term (- max-depth 1))))]
            [else              (let ([num-args (random 4)])
                                 (appC (random-term (- max-depth 1)) (make-args num-args (- max-depth 1))))]))))
@@ -60,8 +63,6 @@
   (cond
     [(= n 0)      '()]
     [else         (cons (random-term depth) (make-args (- n 1) depth))]))
-
-(random-term 3)
 
 ;;unparse function here...
 
