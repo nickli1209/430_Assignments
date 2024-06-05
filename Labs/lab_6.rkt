@@ -65,9 +65,22 @@
 
 ;;unparse function here...
 
+(define (unparse [exp : ExprC]): Sexp
+  (match exp
+    [(numC n)            n]
+    [(strC s)            s]
+    [(idC x)             x]
+    [(lambC params body)      (append (list 'lamb ':) params (list ': (unparse body)))]
+    [(appC f args)            (append (list (unparse f)) (map unparse args))]
+    [(ifC test then else)     (list 'if ': (unparse test) ': (unparse then) ': (unparse else))]))
 
 
-
+;;test unparse
+(check-equal? (unparse (numC 10)) 10)
+(check-equal? (unparse (idC 'a)) 'a)
+(check-equal? (unparse (lambC (list 'a 'b 'c) (strC "nick"))) '{lamb : a b c : "nick"})
+(check-equal? (unparse (appC (idC '+) (list (numC 10) (numC 5)))) '{+ 10 5})
+(check-equal? (unparse (ifC (idC 'x) (numC 10) (numC 0))) '{if : x : 10 : 0})
 
 
 
