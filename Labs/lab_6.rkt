@@ -82,6 +82,10 @@
 (check-equal? (unparse (appC (idC '+) (list (numC 10) (numC 5)))) '{+ 10 5})
 (check-equal? (unparse (ifC (idC 'x) (numC 10) (numC 0))) '{if : x : 10 : 0})
 
+(define (quiz): ExprC
+  (let([exp (random-term 3)])
+    (begin
+      (println (unparse exp))
+      exp)))
 
-
-
+(define secret (quiz))
